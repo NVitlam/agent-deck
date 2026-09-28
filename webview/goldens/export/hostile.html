@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Report · 2026-09-21 12:00 UTC</title>
+<style>
+:root { color-scheme: light dark; --fg: #1f1f1f; --dim: #5f5f5f; --line: #d0d0d0; --bg: #ffffff; --panel: #f5f5f5; }
+@media (prefers-color-scheme: dark) { :root { --fg: #d4d4d4; --dim: #9d9d9d; --line: #3c3c3c; --bg: #1e1e1e; --panel: #252526; } }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 52em; margin: 0 auto; padding: 32px 24px; }
+h1 { font-size: 1.5em; margin: 0 0 8px; }
+h2 { font-size: 1.1em; margin: 0 0 4px; }
+.facts p, .line { margin: 2px 0; color: var(--dim); }
+.finding, .refusal { margin: 16px 0; padding: 10px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+.meta { color: var(--dim); font-size: 0.9em; margin: 0 0 6px; }
+.caption { font-size: 0.85em; color: var(--dim); margin: 8px 0 2px; }
+.text { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+ul { margin: 4px 0 0; padding-left: 18px; }
+code { font-family: ui-monospace, Consolas, monospace; font-size: 0.9em; color: var(--dim); }
+</style>
+</head>
+<body>
+<main>
+<h1>Report · 2026-09-21 12:00 UTC</h1>
+<div class="facts">
+<p>Claude Code 2.1.246</p>
+<p>1 session since 2026-09-20 12:00 UTC</p>
+</div>
+<section class="finding">
+<h2>&lt;img src=&quot;https://example.invalid/t.png&quot;&gt; ![x](https://example.invalid/i.png)</h2>
+<p class="meta">Churn chain · medium confidence · since last run: still</p>
+<p class="caption">Detail</p>
+<p class="text">&lt;script src=&quot;https://example.invalid/s.js&quot;&gt;&lt;/script&gt;
+[link](https://example.invalid/)
+```
+code
+```</p>
+<p class="caption">Cause</p>
+<p class="text">&lt;iframe src=&quot;https://example.invalid/f&quot;&gt;&lt;/iframe&gt; &lt;link rel=&quot;stylesheet&quot; href=&quot;https://example.invalid/c.css&quot;&gt; | cell | *em* _em_ ~~s~~ # h &lt;https://example.invalid/a&gt;</p>
+<p class="caption">Evidence</p>
+<ul>
+<li>&lt;b&gt;label&lt;/b&gt;: <strong>repo/&lt;img src=x onerror=y&gt;.md</strong> <code>sessions[0].files[0].filePath · ses_example01</code></li>
+</ul>
+</section>
+</main>
+</body>
+</html>

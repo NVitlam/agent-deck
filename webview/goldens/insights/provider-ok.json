@@ -1,0 +1,154 @@
+{
+  "title": "Agent Deck Insights 0.2.0",
+  "rows": [
+    {
+      "runId": "run-3",
+      "state": "ok",
+      "when": "2026-09-21 12:00 UTC",
+      "outcome": "8 findings",
+      "agent": "Claude Code"
+    },
+    {
+      "runId": "run-2",
+      "state": "empty",
+      "when": "2026-09-20 12:00 UTC",
+      "outcome": "no findings",
+      "agent": "Codex"
+    },
+    {
+      "runId": "run-1",
+      "state": "refused",
+      "when": "2026-09-19 12:00 UTC",
+      "outcome": "refused",
+      "agent": "Claude Code"
+    },
+    {
+      "runId": "run-4",
+      "state": "ok",
+      "when": "2026-09-18 12:00 UTC",
+      "outcome": "1 finding",
+      "agent": "Claude Code"
+    }
+  ],
+  "preview": {
+    "runId": "run-3",
+    "report": {
+      "state": "ok",
+      "facts": {
+        "heading": "Report · 2026-09-21 12:00 UTC",
+        "agent": "Claude Code 2.1.246",
+        "window": "12 sessions since 2026-09-14 12:00 UTC; 2 excluded",
+        "usage": "Run usage: 48,210 prompt tokens · 3,904 output tokens · 0.24 USD (estimated by Claude Code)"
+      },
+      "findings": [
+        {
+          "lead": "Lead line 0 for re-read-loop",
+          "meta": "Re-read loop · low confidence · since last run: new",
+          "detail": "Detail paragraph 0.\nIt spans two lines.",
+          "cause": "Cause sentence 0.",
+          "evidence": [
+            {
+              "label": "Prompt tokens",
+              "value": "128400",
+              "source": "sessions[0].totals.prompt · ses_example01"
+            }
+          ]
+        },
+        {
+          "lead": "Lead line 1 for churn-chain",
+          "meta": "Churn chain · medium confidence · since last run: still",
+          "detail": "Detail paragraph 1.\nIt spans two lines.",
+          "cause": "Cause sentence 1.",
+          "evidence": [
+            {
+              "label": "Prompt tokens",
+              "value": "128400",
+              "source": "sessions[0].totals.prompt · ses_example01"
+            }
+          ]
+        },
+        {
+          "lead": "Lead line 2 for context-churn",
+          "meta": "Context churn · high confidence · since last run: resolved",
+          "detail": "Detail paragraph 2.\nIt spans two lines.",
+          "cause": "Cause sentence 2.",
+          "evidence": [
+            {
+              "label": "Prompt tokens",
+              "value": "128400",
+              "source": "sessions[0].totals.prompt · ses_example01"
+            }
+          ]
+        },
+        {
+          "lead": "Lead line 3 for stall",
+          "meta": "Stall · low confidence",
+          "detail": "Detail paragraph 3.\nIt spans two lines.",
+          "cause": "Cause sentence 3.",
+          "evidence": [
+            {
+              "label": "Prompt tokens",
+              "value": "128400",
+              "source": "sessions[0].totals.prompt · ses_example01"
+            }
+          ]
+        },
+        {
+          "lead": "Lead line 4 for silent-subagent",
+          "meta": "Silent subagent · medium confidence · since last run: new",
+          "detail": "Detail paragraph 4.\nIt spans two lines.",
+          "cause": "Cause sentence 4.",
+          "evidence": [
+            {
+              "label": "Prompt tokens",
+              "value": "128400",
+              "source": "sessions[0].totals.prompt · ses_example01"
+            }
+          ]
+        },
+        {
+          "lead": "Lead line 5 for compaction",
+          "meta": "Compaction · high confidence · since last run: still",
+          "detail": "Detail paragraph 5.\nIt spans two lines.",
+          "cause": "Cause sentence 5.",
+          "evidence": [
+            {
+              "label": "Prompt tokens",
+              "value": "128400",
+              "source": "sessions[0].totals.prompt · ses_example01"
+            }
+          ]
+        },
+        {
+          "lead": "Lead line 6 for cache-miss",
+          "meta": "Cache miss · low confidence · since last run: resolved",
+          "detail": "Detail paragraph 6.\nIt spans two lines.",
+          "cause": "Cause sentence 6.",
+          "evidence": [
+            {
+              "label": "Prompt tokens",
+              "value": "128400",
+              "source": "sessions[0].totals.prompt · ses_example01"
+            }
+          ]
+        },
+        {
+          "lead": "Lead line 7 for other",
+          "meta": "Other pattern · medium confidence",
+          "detail": "Detail paragraph 7.\nIt spans two lines.",
+          "cause": "Cause sentence 7.",
+          "evidence": [
+            {
+              "label": "Prompt tokens",
+              "value": "128400",
+              "source": "sessions[0].totals.prompt · ses_example01"
+            }
+          ]
+        }
+      ],
+      "rejected": "1 finding rejected by the provider",
+      "rawOutput": false,
+      "investigate": false
+    }
+  }
+}

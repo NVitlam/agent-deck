@@ -46,7 +46,10 @@ import { costOfSeries } from './pricing.js';
 import type {
   AgentStats,
   CostSource,
+  ChurnRecord,
   FileStats,
+  LoopRecord,
+  SkillStat,
   StatsEngine,
   StatsRecord,
   StatsToolClass,
@@ -56,6 +59,8 @@ import { STATS_SCHEMA_VERSION } from './schema.js';
 import { deriveStalls } from './stalls.js';
 import { deriveTiming } from './timing.js';
 import { classOf } from './toolclass.js';
+import { skillNameOf } from './skills.js';
+import { NAME_MAX_CHARS, PATH_MAX_CHARS } from './schema.js';
 
 /** Everything the deriver needs that is not the session itself. */
 export interface DeriveParams {
@@ -207,6 +212,97 @@ function deriveFiles(
 }
 
 /**
+ * Every `Skill` call this session made, in SESSION-WIDE call order — DoD 9.3.
+ *
+ * `seq` is the position in that sequence, not the index in this array: a
+ * session whose third and seventh calls are skills produces 2 and 6, which
+ * is what makes the field capable of being wrong. `skills.ts` reads the name
+ * off one named input key and never touches `args`.
+ *
+ * Named `seq` and not `ordinal` per the user's ruling of 2026-09-20 and
+ * `schema.ts`'s own rule: a session-wide position is a `...Seq`, a per-agent
+ * one an `...Ordinal`, and `ToolNode.ordinal` above is the per-agent kind.
+ */
+function deriveSkills(engine: StatsEngine, sequence: readonly ToolNode[]): SkillStat[] {
+  const out: SkillStat[] = [];
+  sequence.forEach((tool, index) => {
+    // The name was extracted at the parse boundary, off the untruncated
+    // structured input; `skillNameOf` is consulted here only to keep the
+    // engine/tool gate in one place. A node carrying a name for a tool this
+    // engine does not have is not a skill call.
+    if (tool.skillName === undefined) return;
+    if (skillNameOf(engine, tool.toolName, { skill: tool.skillName }) === undefined) return;
+    out.push({ name: tool.skillName, seq: index });
+  });
+  return out;
+}
+
+/**
+ * THE ONE PLACE THE STRING CAPS ARE APPLIED — DoD 9.1.
+ *
+ * One site, deliberately: five scattered checks are five things to keep in
+ * step, and a mutation test has to find them all to mean anything. The
+ * validator in `schema.ts` mirrors this as a REFUSAL, so a record that got
+ * past here is refused rather than stored.
+ *
+ * ## Refused, never truncated; the record is never excluded
+ *
+ * An over-length OPTIONAL string omits its field. An over-length REQUIRED
+ * string drops its ROW, because a `FileStats` with no `filePath` or a skill
+ * with no `name` is a malformed row rather than a row with a gap. Either way
+ * the session keeps its `coverage` and every other fact it has: G3’s "no
+ * partial tree" is about a tree that cannot be PLACED, not about one field of
+ * one row being unpublishable.
+ *
+ * Each is named in `unavailable` as `<section>:string-overlength:<field>`.
+ * The subject is the record SECTION rather than a fact id because `filePath`
+ * serves F1, F3 and F4 at once and no single `F<n>` is true of it.
+ */
+function applyStringCaps(parts: {
+  files: FileStats[];
+  loops: LoopRecord[];
+  churn: ChurnRecord[];
+  agents: AgentStats[];
+  skills: SkillStat[];
+}, unavailable: Set<string>): void {
+  const overPath = (value: string | undefined): boolean =>
+    value !== undefined && value.length > PATH_MAX_CHARS;
+  const overName = (value: string | undefined): boolean =>
+    value !== undefined && value.length > NAME_MAX_CHARS;
+
+  // REQUIRED strings: the row goes.
+  const filesKept = parts.files.filter((row) => !overPath(row.filePath));
+  if (filesKept.length !== parts.files.length) {
+    unavailable.add('files:string-overlength:filePath');
+    parts.files.splice(0, parts.files.length, ...filesKept);
+  }
+  const churnKept = parts.churn.filter((row) => !overPath(row.filePath));
+  if (churnKept.length !== parts.churn.length) {
+    unavailable.add('churn:string-overlength:filePath');
+    parts.churn.splice(0, parts.churn.length, ...churnKept);
+  }
+  const skillsKept = parts.skills.filter((row) => !overName(row.name));
+  if (skillsKept.length !== parts.skills.length) {
+    unavailable.add('skills:string-overlength:name');
+    parts.skills.splice(0, parts.skills.length, ...skillsKept);
+  }
+
+  // OPTIONAL strings: the field goes, the row stays.
+  for (const loop of parts.loops) {
+    if (overPath(loop.filePath)) {
+      delete loop.filePath;
+      unavailable.add('loops:string-overlength:filePath');
+    }
+  }
+  for (const agent of parts.agents) {
+    if (overName(agent.agentType)) {
+      delete agent.agentType;
+      unavailable.add('agents:string-overlength:agentType');
+    }
+  }
+}
+
+/**
  * The class of a tool, resolved against ONE engine's vocabulary.
  *
  * `toolclass.ts` is keyed by (engine, tool) because the vocabularies overlap —
@@ -286,6 +382,9 @@ function excludedRecord(
     contextChurn: [],
     compactions: [],
     stalls: [],
+    // Empty for the same reason the arrays above are: an excluded session
+    // was not read for facts at all. DoD 9.3.
+    skills: [],
     // The block is present and holds nothing, which is what it holds for any
     // session stating no instant. An excluded record names no per-fact gap at
     // all — `coverage` is the single reason, stated once — so `F14:<engine>`
@@ -356,6 +455,13 @@ export function deriveStats(state: SessionState, params: DeriveParams = {}): Sta
   if (callsWithoutHash > 0) unavailable.add(`F3:${engine}`);
   const churn = canChurn ? deriveChurn(agentCalls, (name) => classOf(engine, name)) : [];
 
+  // ---- skills (DoD 9.3) --------------------------------------------------
+  // Always present, possibly empty. An engine with no skill-invoking tool
+  // says so through `unavailable` rather than through an empty array, so an
+  // empty array always means "this session invoked none".
+  const skills = deriveSkills(engine, sequence);
+  if (engine !== 'cc') unavailable.add(`skills:${engine}`);
+
   // ---- F5, F6, F8, F9(b), F15 per agent ----------------------------------
   // `undefined` where this session states no spawn edges — see the helper. The
   // decision is taken ONCE, above the loop, so every agent of one session
@@ -393,6 +499,9 @@ export function deriveStats(state: SessionState, params: DeriveParams = {}): Sta
       resultUnreceived:
         node.kind === 'subagent' && (unreceivedByAgent?.get(node.id) ?? false),
       ...(node.model === undefined ? {} : { model: node.model }),
+      // DoD 9.2 — the TYPE alone. `node.label` carries the description and
+      // is never read here.
+      ...(node.agentType === undefined ? {} : { agentType: node.agentType }),
     });
   }
   if (!anySeries) unavailable.add(`F6:${engine}`);
@@ -483,6 +592,12 @@ export function deriveStats(state: SessionState, params: DeriveParams = {}): Sta
   // §D forbids by name — and the gap is named instead.
   if (unreceivedByAgent === undefined) unavailable.add(`F15:${engine}`);
 
+  // ---- the string caps (DoD 9.1) ----------------------------------------
+  // LAST, and on the assembled parts rather than at each producer: one site
+  // to read, one site to mutate. Everything above states facts; this decides
+  // which of them are publishable as strings.
+  applyStringCaps({ files, loops, churn, agents, skills }, unavailable);
+
   return {
     statsSchemaVersion: STATS_SCHEMA_VERSION,
     sessionId: state.sessionId,
@@ -496,6 +611,7 @@ export function deriveStats(state: SessionState, params: DeriveParams = {}): Sta
     tools,
     loops,
     churn,
+    skills,
     contextChurn: contextChurn ?? [],
     compactions,
     stalls,

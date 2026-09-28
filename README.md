@@ -220,22 +220,59 @@ Install from the VS Code Marketplace - open the **Extensions** view and search f
 code --install-extension nvitlam.agent-deck
 ```
 
-**Where to find it: the Agent Deck icon in the activity bar.** It opens a sidebar with one entry
-per command:
+**Where to find it: the Agent Deck icon in the activity bar.** It opens a sidebar with a strip
+of three tabs — **Menu · View · Tweaks** — one open at a time. The same three are on the view's
+title menu.
 
-- **Open Deck** — the session deck, in the first editor group.
-- **Open Statistics** — the same panel, on its Stats view.
+**One window.** Deck, Statistics, Insights and About are four surfaces of the one Agent Deck panel,
+and the Menu switches between them in place — nothing opens a second panel.
+
+**Everything is in that sidebar or that menu. The panel is content only** — no bars, no buttons,
+no chips, with the exceptions noted below: Statistics' tabs, and the tiles on Insights and About.
+You pan, drag, zoom and select; everything else is a sidebar entry, a menu entry or a keyboard
+shortcut.
+
+**Menu**
+
+- **Open Deck** — the session deck, in the first editor group. It comes back to the deck from
+  wherever you are, and keeps the renderer you chose.
+- **Open Statistics** — the same panel, on its Stats view, always on the **Files** tab.
+- **Open Insights** — the same panel, on its [Insights](#insights) surface. The sidebar shows
+  beside it which state that surface is in: *Facts only*, or the name of the Insights provider
+  that is registered, with the provider's status line under it when it states one.
+- **Pick Agent** — under Open Insights, only while the registered provider offers it: asks the
+  provider to let you choose the agent CLI it sends to.
+- **Show Payload** — likewise: asks the provider to show the payload it would send, for review.
+- **Clear History** — likewise: asks the provider to clear its stored reports. Agent Deck asks
+  nothing first; a confirmation, if there is one, is the provider's.
 - **Show Diagnostics** — the Agent Deck output channel.
 - **Settings** — VS Code's settings, filtered to Agent Deck.
 - **Clear Stats History** — removes the local stats history, after a confirmation.
+- **About** — the same panel, on a page with what this is and where to find it.
 
-A second tab, **Tweaks**, shows four settings — follow new sessions, open the drawer on entering a
-session, open the drawer expanded, and the deck ordering. Changing one writes that setting; the tab
-keeps no value of its own and shows whatever the settings say.
+**View** — five collapsible groups, each showing what it is set to and folding up again once you
+choose: **Renderer** (Canvas or List), **Sessions** and **Engines** (the two filters), **Layout**
+and **Sort**. **Inspector** appears under them while a tool-call drawer is open, with the drawer's
+status, order and tool filters. **Reset view** acts on whichever surface you are on.
 
-![The Agent Deck sidebar in the activity bar](media/sidebar.png)
+**Tweaks** — three settings as checkboxes, each with a line saying what it does: follow new
+sessions, open the drawer on entering a session, open the drawer expanded. Ticking one writes that
+setting; the sidebar keeps no value of its own and shows whatever the settings say. The deck's
+opening order is `agentDeck.defaultOrdering` in Settings — the deck's own order is View ▸ Sort.
 
-![The sidebar's Tweaks tab: four settings, three checked, deck ordering live](media/sidebar-tweaks.png)
+**Statistics keeps its five tabs** — Files, Tools, Loops & churn, Tokens, Trends. **Insights and
+About carry tiles**, and a tile that opens a web page asks first. With an Insights provider
+registered, Insights carries its report list — click a report to preview it, tick reports for a
+batch — the preview's **HTML**, **Markdown** and **Copy** export actions, and **Export ticked**.
+Nothing else on the panel is pressed.
+
+**The keyboard shortcuts are unchanged**, and they work while the deck panel has focus: `a` `c`
+`o` `x` for the engines, `1` `2` `3` for the layout, `l` `r` `e` for the sort. `Escape` walks
+back out of a session, and `k` collapses the tree.
+
+![The Agent Deck sidebar in the activity bar — a screenshot of an earlier release, to be retaken](media/sidebar.png)
+
+![The sidebar's settings — a screenshot of an earlier release's Tweaks tab, to be retaken](media/sidebar-tweaks.png)
 
 Every entry is also in the Command Palette, under **Agent Deck:**. Your sessions appear on their
 own — there is nothing to point it at and nothing to switch on.
@@ -641,7 +678,7 @@ nobody can see is not a refusal. Every other session is matched to the folders a
 
 ## Stats
 
-**What each session touched, repeated and spent — as numbers.** **Open Statistics** in the sidebar,
+**What each session touched, repeated and spent — as numbers.** **Menu ▸ Open Statistics** in the sidebar,
 or **Agent Deck: Open Statistics** in the Command Palette, switches the panel to its Stats view, in
 five parts: **Files** (every file a session touched, with its reads, edits, writes and errors),
 **Tools** (every tool a session called, with its calls, errors, longest call and total duration),
@@ -667,10 +704,11 @@ Seven things have names. Each is a rule over a session's tool calls and token co
   with any other tool is listed as a loop.
 - **Churn chain** — one agent edits or writes a file, a later call by the same agent ends in an
   error, and the agent edits or writes that file again. The chain lists every call between the two
-  writes.
+  writes, how many of them failed, and how many of those failures named that same file.
 - **Context churn** — a turn in which the tokens written to the prompt cache rose by 5,000 or more
-  over the previous turn (the measurement parameter `SPIKE_TOKENS`). Claude Code only: it is the one
-  engine the threshold was measured on.
+  over the previous turn (the measurement parameter `SPIKE_TOKENS`), with the time between the two
+  turns where the engine states both. Claude Code only: it is the one engine the threshold was
+  measured on.
 - **Silent subagent** — a subagent that was spawned and made no tool call at all.
 - **Compaction** — the engine's own record that it compacted the conversation, with the prompt size
   before and after where the engine states them.
@@ -743,7 +781,7 @@ so there is nothing to put in this setting for it, and its sessions show no cost
 
 ### Clearing the history
 
-**Clear Stats History** — in the sidebar, or **Agent Deck: Clear Stats History** in the Command
+**Clear Stats History** — in the sidebar's Menu tab, or **Agent Deck: Clear Stats History** in the Command
 Palette — deletes the whole history after a modal confirmation, and works whether or not
 `agentDeck.stats.enabled` is on. There is one history per machine, so it is cleared for every window
 at once; **another window that is already open keeps showing what it had read** until it next writes
@@ -753,7 +791,9 @@ a record or is reloaded. A session still running refills the history as it goes.
 
 **Records from 0.7.x are read; time facts are absent for them.** Nothing on disk is rewritten. Stored
 history is what Trends draws: such a record is a point in every Trends series except tokens per minute,
-and the footer counts it as `F14:absent`.
+and the footer counts it as `F14:absent`. A stored record written before a churn chain carried its
+same-file failure count, or before a context-churn turn carried its time since the turn before,
+names the gap as `fileErrors:absent` or `gapBeforeMs:absent`.
 
 **Nothing leaves the machine.** No upload, no sync, and no telemetry sent. The history is kept in VS Code's
 global storage for this extension, as one JSON Lines file per week — not under `~/.claude`, not
@@ -771,13 +811,186 @@ model ids — and never message text, tool payloads or reasoning. Turn it off wi
 - **A session that finishes while no VS Code window is open is not recorded.** Agent Deck records
   what it observes while a window is running. It never reads old transcripts back into the history.
 
+### What a record carries about agents and skills
+
+Each subagent carries the **agent type** Claude Code recorded for it. The description beside it is
+not carried: it is prose written by whoever spawned the agent, and Agent Deck keeps prose out of
+these records.
+
+Each session carries the **skills it invoked**, by name and by position in that session’s calls.
+The arguments passed to a skill are not carried, for the same reason. Which later tool calls a
+skill produced is not something Claude Code writes down, so Agent Deck does not claim it.
+
+A file path over 1024 characters, or an agent type or skill name over 64, is **left out rather
+than shortened** — a shortened path is still a path — and the record names what was left out. The
+session keeps every other number it has.
 ### For extension authors
 
-`vscode.extensions.getExtension('nvitlam.agent-deck')?.exports` is Agent Deck's extension API,
-`apiVersion` 1: `getLiveStats()`, `getStoredStats({ sinceMs, limit })` and the event
-`onDidUpdateStats`, which fires for every record written and, while a session changes, at most once
-every two seconds for that session. It hands out these records and nothing else — never a session's
-tree and never a preview.
+`vscode.extensions.getExtension('nvitlam.agent-deck')?.exports` is Agent Deck's extension API.
+`apiVersion` is `2`, and version 2 only adds to version 1: `getLiveStats()`,
+`getStoredStats({ sinceMs, limit })` and the event `onDidUpdateStats`, which fires for every record
+written and, while a session changes, at most once every two seconds for that session. It hands out
+these records and nothing else — never a session's tree and never a preview.
+
+Version 2 adds `registerInsightsProvider`: `registerInsightsProvider(provider)` returns a
+disposable. A provider is:
+
+```ts
+{
+  providerVersion: 1;
+  about: { name: string; version: string; status?: string }; // status: one line, e.g. "licensed until 2027-09-23"
+  getLatest(): FindingSetView | null;               // required; not called since 0.9.0's report list
+  listRuns(): RunSummary[];
+  getRun(runId: string): FindingSetView | null;     // the run the user selects or exports
+  run?(): Promise<void>;                            // optional; not called — no Run action
+  getRawOutput?(runId: string): string | null;      // optional
+  pickAgent?(): Promise<void>;                      // optional — the sidebar's Pick Agent
+  showPayload?(): Promise<void>;                    // optional — the sidebar's Show Payload
+  clearHistory?(): Promise<void>;                   // optional — the sidebar's Clear History
+  investigate?(runId: string): Promise<void>;       // optional — the preview's Investigate Report
+  onDidChange: Event<void>;
+}
+```
+
+`FindingSetView` and `RunSummary` are plain JSON types defined by Agent Deck and exported from its
+API module with every type they use:
+
+```ts
+FindingSetView {
+  runId: string;
+  createdAt: number;
+  agent: { kind: 'claude' | 'codex'; version: string };
+  window: { sessions: number; excluded: number; sinceMs: number };
+  usage: { prompt: number; output: number; costUsd?: number } | null;
+  resolvedKinds: string[];      // kinds in the previous set and absent now
+  findings: FindingView[];      // empty unless state is 'ok'
+  rejected: number;
+  state: 'ok' | 'empty' | 'refused';
+  refusal?: { step: string; reason: string }; // present exactly when refused
+}
+FindingView {
+  id: string;
+  kind: 're-read-loop' | 'churn-chain' | 'context-churn' | 'stall'
+      | 'silent-subagent' | 'compaction' | 'cache-miss' | 'other';
+  confidence: 'low' | 'medium' | 'high';
+  action: { lead: string; detail: string }; // lead: at most 15 words, one line; detail may be ''
+  cause: string;
+  evidence: { label: string; sessionId: string; statsKey: string; value: number | string }[];
+  sinceLastRun: 'new' | 'still' | 'resolved' | null;
+}
+RunSummary { runId: string; createdAt: number; state: 'ok' | 'empty' | 'refused'; findings: number; agentKind: 'claude' | 'codex' }
+```
+
+`providerVersion` is `1`, and a provider fires `onDidChange` whenever what `listRuns` or `getRun`
+would return has moved. The Insights surface lists `listRuns()` newest first — Agent Deck sorts it
+— and previews the run you select through `getRun(runId)`; a set whose own `runId` is not the one
+asked for is dropped. `about.status`, when present, is one line of at most 64 characters shown
+under the provider's name; one that fails the check is left out. `getLatest` is still
+required and `run` is optional, so a provider written for the earlier contract registers
+unchanged; Agent Deck calls neither. The preview shows each finding's action lead first, its
+kind, confidence and "since last run" as words (never a score), the detail behind an expand (no
+expand when the detail is empty: a one-sentence action), the cause, then each piece of evidence
+under its label. A number whose `statsKey` names milliseconds (its last part carries `Ms` as a
+word: `longestGapMs`, `durationMsSum`, `durationMsMax`) is printed whole with a duration beside it
+— *28,100,113 ms · 7 h 48 m*. A cost (`costUsd`, `costPerHourUsd`) and a ratio (`cacheRatio`,
+`contextFill`) are shown to two places and a per-minute rate as a whole number, with the exact
+value in the tooltip. Every export prints the same, with the exact value as the HTML title and
+beside the value in Markdown and plain text. When the set names kinds that were in the previous set and are absent now, one
+line says *No longer reported:* and names them; each must be one of the eight kinds, said once,
+and not a kind the set still lists. Above them it states the run: when, which
+agent CLI and version, the window, and the run's own usage — marked *estimated by Claude Code*
+when the agent was Claude Code. A refused run shows the step and the reason, and a **Show raw
+output** action that asks `getRawOutput` for the selected run's `runId` and opens what comes back
+as an untitled plain-text document. When the provider has no `getRawOutput`, the refused run says
+*No raw output for this run.* instead.
+When the provider has `investigate`, the preview's header shows **Investigate Report** beside
+Export; pressing it calls `investigate` with the selected run's `runId` and nothing else. Agent
+Deck builds no prompt, starts no process and does not know what the provider does next. Without
+`investigate` there is no button. If the provider throws or its promise rejects, the Agent Deck
+output channel gets one line and a message names the action.
+One provider at a time — a second registration throws, naming both —
+and disposing the registration returns the surface to its free state.
+
+**What a provider hands over is data: provider data is plain JSON, checked field by field, and never
+executed.** Agent Deck reads what the provider returns as the objects' own data properties,
+never through a getter; every enum is checked against its list; every id, version and stats key
+must match a fixed shape; lists are capped (64 findings, 16 evidence items each, 50 runs); a run
+id, a finding id, or one stats key of one session that repeats is refused. **Every text is
+length-capped and checked**: a name (an evidence label, a refusal's step) at most 64 characters,
+a path at most 1,024, free text (an action, a cause, a refusal's reason) at most 2,000 — the
+first two are the stats history's own caps — with no character from the Unicode categories Cc
+and Cf (free text may carry a tab and line breaks, LF or CRLF): that excludes zero-width spaces
+and joiners, bidirectional marks and overrides, the soft hyphen, the byte-order mark and tag
+characters; nor a line or paragraph separator, nor a lone surrogate. Evidence may be text only on
+a stats-record field the history itself stores as text: a file path at most 1,024 characters (the
+history's cap), an agent type or skill name at most 64 (likewise), a project slug at most 1,024 and
+any other such field at most 64. A set whose state and findings disagree is refused whole. A value that
+fails is **dropped and counted, never shortened**, and the surface says how many were dropped — an
+export of that report says so too. (A status line that fails is simply left out: it is not part of
+any report.)
+Raw output over 1,048,576 characters is not opened at all. Agent Deck calls `listRuns`,
+`getRun` for the run you select or export, `getRawOutput` only when you ask for a refused run's
+raw output, `pickAgent`, `showPayload` or `clearHistory` only when you press that sidebar row,
+`investigate` only when you press Investigate Report, and subscribes once through `onDidChange`; it
+calls nothing else.
+
+## Insights
+
+**Menu ▸ Open Insights** — a surface of the one panel. Nothing Agent Deck does depends on Insights,
+and no feature of Agent Deck moves behind it.
+
+**Free — no Insights provider registered.** The facts the stats history already holds for the last
+7 days, as tiles, each naming the record field it was counted from: sessions by engine,
+compactions, long-idle resumes (sessions whose longest gap between calls is at least your
+`agentDeck.livenessThresholdMs`, 120 seconds by default — the tile names the threshold in
+milliseconds with its duration beside it, *120,000 ms · 2 m*), re-read
+loops, failed tool calls, stalls, silent subagents,
+prompt and output tokens, and the cost the engines reported themselves (cost estimated by Claude
+Code or from your prices is not added in). A session read only in part is not counted, and the
+surface says how many were left out. Under the tiles, one line of fact: *Deliberate failures
+(test-driven breakage) and accidental ones are indistinguishable in this data.* Below them, one of three examples, labelled *"Example, based on
+a real run"*, with made-up ids; it changes each time you come back. And one tile, **Get Agent Deck
+Insights**, which asks before it opens <https://agent-deck.app/insights.html> in your browser — the Insights page, with
+what it does, what it never does, and the plans.
+
+**With a provider registered.** On the left, the provider's reports — each with its date, how many
+findings it has and the agent CLI it used, newest first, a refused one marked *refused*. On the
+right, *Select a report to preview / download.* until you click one; then that report, exactly as
+the [extension API](#for-extension-authors) section describes it. Click the selected report again
+and the preview goes back to that prompt. The same fact tiles as the free state sit below both, with the same line of fact under them.
+There is no Run button here: a run is started from Insights' own window. If the provider goes away,
+the sidebar reads *Facts only* again, its rows under Open Insights go, and this surface shows the
+free view; the deck and Statistics are left as they were. The Agent Deck output channel writes one
+line each time a provider registers, deregisters (with the reason) or is refused.
+
+**Export.** The preview's header carries **HTML**, **Markdown** and **Copy** — and
+**Investigate Report** beside them when the provider offers it, which hands the selected report to
+the provider. HTML is one
+self-contained page — its own stylesheet, no script, no image, nothing it loads, and a content
+security policy that forbids loading anything; Markdown escapes the provider's text so none of it
+becomes a link, an image or HTML; Copy puts plain text on the clipboard. HTML and Markdown ask
+where to save with the editor's own save dialog. Tick reports in the list and **Export ticked
+(n)** asks the format, then a folder, and writes one file per report there, never replacing a file
+already in it (a name that is taken gains `-2`, `-3`…). Every export is built from what the
+provider returns for that run at that moment, checked as above. Agent Deck refuses to write an
+export into a directory it only reads — `~/.claude`, the Claude Code projects directory, the Codex
+directory or OpenCode's data directory — and says so. Exporting makes no network call.
+
+**Agent Deck Insights** is a separate extension that registers as that provider. **Agent Deck has
+no knowledge of your Insights licence** — Insights registers only once it has checked its own
+licence, and Agent Deck only asks whether a provider is registered. Whether Insights is installed
+is never consulted, and the sidebar states the same thing whether or not the panel is open.
+
+## About
+
+**Agent Deck: About** in the Command Palette, and **About** in the sidebar's Menu. A surface of the
+one panel, in the deck's own look: a short introduction, four tiles — **Portfolio**, **Repository**,
+**LinkedIn** and **Sponsor** — and a footer line with the version and the licence (MIT). While no
+Insights provider is registered a fifth tile, **Get Agent Deck Insights**, is lit; once one is
+registered, About names it and its version instead, with its status line when it states one. A tile asks before it opens anything:
+*"Agent Deck will open `<host>` in your browser"*, with an **Open** button. The links open through
+VS Code — the extension opens no socket for them and makes no network call of its own.
+`SECURITY.md` §1 states that and names its proofs.
 
 ## Claude Code version window
 
@@ -817,7 +1030,9 @@ honesty is kept, and they were not loosened alongside it.
 - **No writes to anything it observes.** Not to `~/.claude`, not to your Claude Code settings, not
   to session files, not to OpenCode's database or its config, not to Codex's `hooks.json` or
   `config.toml`. The one qualification is stated in full under [Trust](#trust) rather than buried
-  here. Its own stats history is the one file it writes, in its own storage — see [Stats](#stats).
+  here. Its own stats history is the one file it writes on its own, in its own storage — see
+  [Stats](#stats); an [Insights](#insights) report you export is written only where you choose, and
+  never into a directory Agent Deck observes.
 - **No launching, wrapping or proxying any of the three engines.** It observes what is already there.
 - **No session replay.** Close the window and the live deck is gone. The one thing kept is the stats
   history — derived numbers, which you can turn off and clear — and it is never read back into a deck.
@@ -850,7 +1065,7 @@ honesty is kept, and they were not loosened alongside it.
 | `agentDeck.followNewSessions` | Select a session that appears while the deck is open, so the deck moves to it. Default `false`: the new session is added in its sort position and the current selection is left alone. This changes what the deck shows and never what is observed. Also in the Tweaks tab of the sidebar, which reads and writes this same value. |
 | `agentDeck.openDrawerOnEnter` | Open a session's tool-call drawer when the session is entered from the deck. Default `false`: the drawer opens when a tool call is selected. The drawer holds the same calls either way. Also in the Tweaks tab. |
 | `agentDeck.drawerExpandedByDefault` | Open the tool-call drawer at its expanded height rather than its collapsed one. Default `false`. The drawer can be expanded and collapsed in the panel at either value; this is the height it opens at. Also in the Tweaks tab. |
-| `agentDeck.defaultOrdering` | The order deck cards are placed in when the deck opens. Default `live`, which puts live sessions first, then idle, degraded, unsupported and ended; `recent` puts the most recently active first; `engine` groups the cards by the engine that produced them. The order chosen on the deck itself applies to that deck and leaves this value alone. Also in the Tweaks tab. |
+| `agentDeck.defaultOrdering` | The order deck cards are placed in when the deck opens. Default `live`, which puts live sessions first, then idle, degraded, unsupported and ended; `recent` puts the most recently active first; `engine` groups the cards by the engine that produced them. The order chosen on the deck itself — View ▸ Sort — applies to that deck and leaves this value alone. **It has no sidebar entry**: the sidebar's Sort group is the deck's own order, and this is what the deck opens with. |
 
 Clearing the history is a command, not a button on the deck: **Agent Deck: Clear Stats History** in
 the command palette or the sidebar, behind a modal confirm. It works whether or not `agentDeck.stats.enabled` is on, so turning

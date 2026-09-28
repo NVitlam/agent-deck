@@ -38,6 +38,25 @@ import {
   refusalOf,
 } from './api.js';
 import type { AgentDeckApi, ApiSources } from './api.js';
+import type {
+  FindingActionView as ApiFindingActionView,
+  FindingEvidenceView as ApiFindingEvidenceView,
+  FindingSetRefusalView as ApiFindingSetRefusalView,
+  FindingSetView as ApiFindingSetView,
+  FindingSinceLastRun as ApiFindingSinceLastRun,
+  FindingView as ApiFindingView,
+  InsightsAgentKind as ApiInsightsAgentKind,
+  InsightsProvider as ApiInsightsProvider,
+  InsightsProviderAbout as ApiInsightsProviderAbout,
+  InsightsProviderAction as ApiInsightsProviderAction,
+  InsightsRunState as ApiInsightsRunState,
+  RunSummary as ApiRunSummary,
+} from './api.js';
+import { InsightsProviderRegistry, PROVIDER_VERSION } from './insights-provider.js';
+
+/** A registry nothing reads, for the tests that are about something else. */
+const registry = (): InsightsProviderRegistry =>
+  new InsightsProviderRegistry({ onChange: () => undefined });
 
 // ---------------------------------------------------------------------------
 // The type-level guards (DoD 5.1: "a type-level `never` guard")
@@ -165,25 +184,175 @@ describe('DoD 5.1: the API has the shape spec §H names', () => {
     ]).toStrictEqual([true, true, true, true, true]);
   });
 
-  it('apiVersion 1, two getters and an event — and nothing else', () => {
+  it('apiVersion 2: two getters, an event and registerInsightsProvider — and nothing else', () => {
     const { emitter: e } = emitter();
-    const api = createAgentDeckApi(sourcesOver([], null), e);
-    expect(api.apiVersion).toBe(1);
-    expect(API_VERSION).toBe(1);
+    const api = createAgentDeckApi(sourcesOver([], null), e, registry());
+    // 2 since v0.9.0 DoD 9.30 — the amendment's own word: "additive;
+    // API_VERSION 2; existing v1 members unchanged".
+    expect(api.apiVersion).toBe(2);
+    expect(API_VERSION).toBe(2);
     expect(typeof api.getLiveStats).toBe('function');
     expect(typeof api.getStoredStats).toBe('function');
     expect(typeof api.onDidUpdateStats).toBe('function');
+    expect(typeof api.registerInsightsProvider).toBe('function');
     // The EXACT surface, not a containment: a fourth member is a promise to
     // every consumer, and it would arrive without anyone deciding to make it.
     expect(Object.keys(api).sort()).toStrictEqual(
-      ['apiVersion', 'getLiveStats', 'getStoredStats', 'onDidUpdateStats'].sort(),
+      [
+        'apiVersion',
+        'getLiveStats',
+        'getStoredStats',
+        'onDidUpdateStats',
+        'registerInsightsProvider',
+      ].sort(),
     );
     expect(Object.isFrozen(api)).toBe(true);
   });
 
+  it('9.42: the API EXPORTS the widened provider contract, key for key, and neither version moved', () => {
+    /*
+     * `Amendment 2026-09-22 — Provider contract v1 widened (pre-publish;
+     * API_VERSION stays 2)`. What another extension compiles against is the
+     * set of types `api.ts` re-exports, so they are pinned HERE, through the
+     * API's own module, against the amendment written out. A key added to or
+     * dropped from any view is a compile error in this file.
+     */
+    type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+    const finding: Exact<
+      keyof ApiFindingView,
+      'id' | 'kind' | 'confidence' | 'action' | 'cause' | 'evidence' | 'sinceLastRun'
+    > = true;
+    const action: Exact<ApiFindingActionView, { lead: string; detail: string }> = true;
+    const evidence: Exact<
+      ApiFindingEvidenceView,
+      { label: string; sessionId: string; statsKey: string; value: number | string }
+    > = true;
+    const set: Exact<
+      keyof ApiFindingSetView,
+      | 'runId'
+      | 'createdAt'
+      | 'agent'
+      | 'window'
+      | 'usage'
+      | 'resolvedKinds'
+      | 'findings'
+      | 'rejected'
+      | 'state'
+      | 'refusal'
+    > = true;
+    const refusalOptional: Exact<ApiFindingSetView['refusal'], ApiFindingSetRefusalView | undefined> = true;
+    const run: Exact<keyof ApiRunSummary, 'runId' | 'createdAt' | 'state' | 'findings' | 'agentKind'> = true;
+    // Verifier round 9.43, W5: the VALUE types too, not only the keys.
+    const setWhole: Exact<
+      ApiFindingSetView,
+      {
+        runId: string;
+        createdAt: number;
+        agent: { kind: 'claude' | 'codex'; version: string };
+        window: { sessions: number; excluded: number; sinceMs: number };
+        usage: { prompt: number; output: number; costUsd?: number } | null;
+        resolvedKinds: string[];
+        findings: ApiFindingView[];
+        rejected: number;
+        state: 'ok' | 'empty' | 'refused';
+        refusal?: { step: string; reason: string };
+      }
+    > = true;
+    const findingWhole: Exact<
+      ApiFindingView,
+      {
+        id: string;
+        kind: 're-read-loop' | 'churn-chain' | 'context-churn' | 'stall' | 'silent-subagent' | 'compaction' | 'cache-miss' | 'other';
+        confidence: 'low' | 'medium' | 'high';
+        action: { lead: string; detail: string };
+        cause: string;
+        evidence: { label: string; sessionId: string; statsKey: string; value: number | string }[];
+        sinceLastRun: 'new' | 'still' | 'resolved' | null;
+      }
+    > = true;
+    const runWhole: Exact<
+      ApiRunSummary,
+      { runId: string; createdAt: number; state: 'ok' | 'empty' | 'refused'; findings: number; agentKind: 'claude' | 'codex' }
+    > = true;
+    const refusalWhole: Exact<ApiFindingSetRefusalView, { step: string; reason: string }> = true;
+    expect([setWhole, findingWhole, runWhole, refusalWhole]).toStrictEqual([true, true, true, true]);
+    const states: Exact<ApiInsightsRunState, 'ok' | 'empty' | 'refused'> = true;
+    const since: Exact<ApiFindingSinceLastRun, 'new' | 'still' | 'resolved'> = true;
+    const agents: Exact<ApiInsightsAgentKind, 'claude' | 'codex'> = true;
+    const rawOutput: Exact<ApiInsightsProvider['getRawOutput'], ((runId: string) => string | null) | undefined> = true;
+    // DoD 9.44 — the round-6 growth, written out.
+    const getRun: Exact<ApiInsightsProvider['getRun'], (runId: string) => ApiFindingSetView | null> = true;
+    const pickAgent: Exact<ApiInsightsProvider['pickAgent'], (() => Promise<void>) | undefined> = true;
+    const showPayload: Exact<ApiInsightsProvider['showPayload'], (() => Promise<void>) | undefined> = true;
+    const clearHistory: Exact<ApiInsightsProvider['clearHistory'], (() => Promise<void>) | undefined> = true;
+    // The ruling of 2026-09-23 (round 6, 1): run is optional, getLatest required.
+    const runOptional: Exact<ApiInsightsProvider['run'], (() => Promise<void>) | undefined> = true;
+    const latestRequired: Exact<ApiInsightsProvider['getLatest'], () => ApiFindingSetView | null> = true;
+    const about: Exact<ApiInsightsProviderAbout, { name: string; version: string; status?: string }> = true;
+    const actions: Exact<ApiInsightsProviderAction, 'pickAgent' | 'showPayload' | 'clearHistory'> = true;
+    // DoD 9.54 — Investigate Report: optional, called with the selected run id.
+    const investigate: Exact<ApiInsightsProvider['investigate'], ((runId: string) => Promise<void>) | undefined> = true;
+    expect([
+      finding, action, evidence, set, refusalOptional, run, states, since, agents, rawOutput,
+      getRun, pickAgent, showPayload, clearHistory, about, actions, runOptional, latestRequired, investigate,
+    ]).toStrictEqual(Array.from({ length: 19 }, () => true));
+    expect(API_VERSION).toBe(2);
+    expect(PROVIDER_VERSION).toBe(1);
+  });
+
+  it('9.42: a widened fake provider registers THROUGH THE API and its text reaches the snapshot whole', () => {
+    const { emitter: e } = emitter();
+    const providers = registry();
+    const api = createAgentDeckApi(sourcesOver([], null), e, providers);
+    const latest: ApiFindingSetView = {
+      runId: 'run-1',
+      createdAt: 1_790_000_000_000,
+      agent: { kind: 'codex', version: '0.151.0' },
+      window: { sessions: 2, excluded: 0, sinceMs: 1_789_400_000_000 },
+      usage: { prompt: 900, output: 40 },
+      resolvedKinds: ['stall'],
+      findings: [
+        {
+          id: 'f-1',
+          kind: 'cache-miss',
+          confidence: 'medium',
+          action: { lead: 'Keep the config file stable between turns', detail: 'The file changed.\nTwice.' },
+          cause: 'The config file was rewritten before each drop.',
+          evidence: [
+            { label: 'File', sessionId: 'ses_example02', statsKey: 'sessions[0].files[0].filePath', value: 'repo/src/config.ts' },
+            { label: 'Prompt tokens', sessionId: 'ses_example02', statsKey: 'sessions[0].totals.prompt', value: 96_000 },
+          ],
+          sinceLastRun: 'still',
+        },
+      ],
+      rejected: 0,
+      state: 'ok',
+    };
+    const provider: ApiInsightsProvider = {
+      providerVersion: 1,
+      about: { name: 'Fake Insights', version: '1.0.0' },
+      getLatest: () => latest,
+      listRuns: () => [{ runId: 'run-1', createdAt: 1_790_000_000_000, state: 'ok', findings: 1, agentKind: 'codex' }],
+      getRun: (runId) => (runId === 'run-1' ? latest : null),
+      run: () => Promise.resolve(),
+      clearHistory: () => Promise.resolve(),
+      onDidChange: () => ({ dispose: () => undefined }),
+    };
+    const handle = api.registerInsightsProvider(provider);
+    // DoD 9.44: the selected run arrives through getRun, whole and COPIED.
+    const snapshot = providers.snapshot('run-1');
+    expect(snapshot?.selected?.set).toStrictEqual(latest);
+    expect(snapshot?.selected?.set).not.toBe(latest);
+    expect(snapshot?.dropped).toBe(0);
+    expect(snapshot?.selected?.rawOutput).toBe(false);
+    expect(providers.actions()).toStrictEqual(['clearHistory']);
+    handle.dispose();
+    expect(providers.snapshot()).toBeNull();
+  });
+
   it('the event has the shape of vscode.Event: subscribe, dispose, disposables, thisArgs', () => {
     const { emitter: e } = emitter();
-    const api = createAgentDeckApi(sourcesOver([], null), e);
+    const api = createAgentDeckApi(sourcesOver([], null), e, registry());
     const bag: { dispose(): unknown }[] = [];
     const seen: string[] = [];
     const owner = { name: 'owner', push(record: StatsRecord): void { seen.push(`${this.name}:${record.sessionId}`); } };
@@ -213,7 +382,7 @@ describe('DoD 5.1: every record from both getters validates, and no property exp
 
   it('getLiveStats: every golden comes back, every one validates, none carries a model key', () => {
     const { emitter: e } = emitter();
-    const api = createAgentDeckApi(sourcesOver(GOLDENS, null), e);
+    const api = createAgentDeckApi(sourcesOver(GOLDENS, null), e, registry());
     const live = api.getLiveStats();
     expect(live).toHaveLength(GOLDENS.length);
     for (const record of live) {
@@ -227,7 +396,7 @@ describe('DoD 5.1: every record from both getters validates, and no property exp
   it('getStoredStats: every golden round-trips through a real store, and validates', async () => {
     const store = storeOfGoldens();
     const { emitter: e } = emitter();
-    const api = createAgentDeckApi(sourcesOver([], store), e);
+    const api = createAgentDeckApi(sourcesOver([], store), e, registry());
     const stored = await api.getStoredStats({});
     // Newest per session: the goldens are one record per session, so all of them.
     expect(stored).toHaveLength(new Set(GOLDENS.map((r) => r.sessionId)).size);
@@ -244,7 +413,7 @@ describe('DoD 5.1: every record from both getters validates, and no property exp
   it('getStoredStats honours sinceMs and limit, through the store', async () => {
     const store = storeOfGoldens();
     const { emitter: e } = emitter();
-    const api = createAgentDeckApi(sourcesOver([], store), e);
+    const api = createAgentDeckApi(sourcesOver([], store), e, registry());
     const all = await api.getStoredStats();
     expect(await api.getStoredStats({ limit: 3 })).toStrictEqual(all.slice(0, 3));
     const newest = all[0];
@@ -255,7 +424,7 @@ describe('DoD 5.1: every record from both getters validates, and no property exp
 
   it('getStoredStats refuses a query it would have to guess about', async () => {
     const { emitter: e } = emitter();
-    const api = createAgentDeckApi(sourcesOver([], null), e);
+    const api = createAgentDeckApi(sourcesOver([], null), e, registry());
     await expect(api.getStoredStats({ sinceMs: Number.NaN })).rejects.toThrow(TypeError);
     await expect(api.getStoredStats({ limit: -1 })).rejects.toThrow(TypeError);
     await expect(api.getStoredStats({ limit: 1.5 })).rejects.toThrow(TypeError);
@@ -295,6 +464,7 @@ describe('DoD 5.1: every record from both getters validates, and no property exp
     const api = createAgentDeckApi(
       sourcesOver([numericLeak, base, previewLeak] as StatsRecord[], null),
       e,
+      registry(),
       (reason) => reasons.push(reason),
     );
     const live = api.getLiveStats();
@@ -317,7 +487,7 @@ describe('DoD 5.1: every record from both getters validates, and no property exp
     const held = [structuredClone(GOLDENS[0]) as StatsRecord];
     const store = storeOfGoldens();
     const { emitter: e } = emitter();
-    const api = createAgentDeckApi(sourcesOver(held, store), e);
+    const api = createAgentDeckApi(sourcesOver(held, store), e, registry());
 
     const live = api.getLiveStats();
     (live[0] as StatsRecord).totals.prompt = -1;

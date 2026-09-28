@@ -584,6 +584,7 @@
                   "inputPreview": "{\"skill\":\"phase\",\"args\":\"0\"}",
                   "inputHash": "bc61020febda12fcf10111745728382d83fb94f9ecff943c447a952718fd13ce",
                   "ordinal": 43,
+                  "skillName": "phase",
                   "resultPreview": "Launching skill: phase",
                   "startedAtMs": 1788595586045,
                   "endedAtMs": 1788595586318,
@@ -3794,6 +3795,7 @@
                     }
                   ],
                   "model": "claude-opus-5",
+                  "agentType": "phase-verifier",
                   "endedAt": 1788600825200
                 },
                 {
@@ -4478,7 +4480,8 @@
                       "atMs": 1788601223364
                     }
                   ],
-                  "model": "claude-opus-5"
+                  "model": "claude-opus-5",
+                  "agentType": "phase-verifier"
                 },
                 {
                   "id": "toolu_0198PuPz1J7ZfugRZHencZJD",
@@ -6686,6 +6689,7 @@
                     }
                   ],
                   "model": "claude-opus-5",
+                  "agentType": "phase-verifier",
                   "endedAt": 1788603542286
                 },
                 {
@@ -6964,6 +6968,7 @@
                   "inputPreview": "{\"skill\":\"handoff\"}",
                   "inputHash": "ad1a50e84bf524bb1c2f09fa46c54fa484e7e2ba0d75606dce6075f374e30c82",
                   "ordinal": 184,
+                  "skillName": "handoff",
                   "resultPreview": "Launching skill: handoff",
                   "startedAtMs": 1788604166653,
                   "endedAtMs": 1788604166979,
@@ -9077,6 +9082,7 @@
                   "inputPreview": "{\"skill\":\"phase\",\"args\":\"0\"}",
                   "inputHash": "bc61020febda12fcf10111745728382d83fb94f9ecff943c447a952718fd13ce",
                   "ordinal": 43,
+                  "skillName": "phase",
                   "resultPreview": "Launching skill: phase",
                   "startedAtMs": 1788595586045,
                   "endedAtMs": 1788595586318,
@@ -12287,6 +12293,7 @@
                     }
                   ],
                   "model": "claude-opus-5",
+                  "agentType": "phase-verifier",
                   "endedAt": 1788600825200
                 },
                 {
@@ -12971,7 +12978,8 @@
                       "atMs": 1788601223364
                     }
                   ],
-                  "model": "claude-opus-5"
+                  "model": "claude-opus-5",
+                  "agentType": "phase-verifier"
                 },
                 {
                   "id": "toolu_0198PuPz1J7ZfugRZHencZJD",
@@ -15179,6 +15187,7 @@
                     }
                   ],
                   "model": "claude-opus-5",
+                  "agentType": "phase-verifier",
                   "endedAt": 1788603542286
                 },
                 {
@@ -15457,6 +15466,7 @@
                   "inputPreview": "{\"skill\":\"handoff\"}",
                   "inputHash": "ad1a50e84bf524bb1c2f09fa46c54fa484e7e2ba0d75606dce6075f374e30c82",
                   "ordinal": 184,
+                  "skillName": "handoff",
                   "resultPreview": "Launching skill: handoff",
                   "startedAtMs": 1788604166653,
                   "endedAtMs": 1788604166979,
@@ -17570,6 +17580,7 @@
                   "inputPreview": "{\"skill\":\"phase\",\"args\":\"0\"}",
                   "inputHash": "bc61020febda12fcf10111745728382d83fb94f9ecff943c447a952718fd13ce",
                   "ordinal": 43,
+                  "skillName": "phase",
                   "resultPreview": "Launching skill: phase",
                   "startedAtMs": 1788595586045,
                   "endedAtMs": 1788595586318,
@@ -20780,6 +20791,7 @@
                     }
                   ],
                   "model": "claude-opus-5",
+                  "agentType": "phase-verifier",
                   "endedAt": 1788600825200
                 },
                 {
@@ -21466,7 +21478,8 @@
                       "atMs": 1788601223364
                     }
                   ],
-                  "model": "claude-opus-5"
+                  "model": "claude-opus-5",
+                  "agentType": "phase-verifier"
                 },
                 {
                   "id": "toolu_0198PuPz1J7ZfugRZHencZJD",
@@ -23674,6 +23687,7 @@
                     }
                   ],
                   "model": "claude-opus-5",
+                  "agentType": "phase-verifier",
                   "endedAt": 1788603542286
                 },
                 {
@@ -23952,6 +23966,7 @@
                   "inputPreview": "{\"skill\":\"handoff\"}",
                   "inputHash": "ad1a50e84bf524bb1c2f09fa46c54fa484e7e2ba0d75606dce6075f374e30c82",
                   "ordinal": 184,
+                  "skillName": "handoff",
                   "resultPreview": "Launching skill: handoff",
                   "startedAtMs": 1788604166653,
                   "endedAtMs": 1788604166979,
@@ -26065,6 +26080,7 @@
                   "inputPreview": "{\"skill\":\"phase\",\"args\":\"0\"}",
                   "inputHash": "bc61020febda12fcf10111745728382d83fb94f9ecff943c447a952718fd13ce",
                   "ordinal": 43,
+                  "skillName": "phase",
                   "resultPreview": "Launching skill: phase",
                   "startedAtMs": 1788595586045,
                   "endedAtMs": 1788595586318,
@@ -29275,6 +29291,7 @@
                     }
                   ],
                   "model": "claude-opus-5",
+                  "agentType": "phase-verifier",
                   "endedAt": 1788600825200
                 },
                 {
@@ -29961,7 +29978,8 @@
                       "atMs": 1788601223364
                     }
                   ],
-                  "model": "claude-opus-5"
+                  "model": "claude-opus-5",
+                  "agentType": "phase-verifier"
                 },
                 {
                   "id": "toolu_0198PuPz1J7ZfugRZHencZJD",
@@ -32169,6 +32187,7 @@
                     }
                   ],
                   "model": "claude-opus-5",
+                  "agentType": "phase-verifier",
                   "endedAt": 1788603542286
                 },
                 {
@@ -32447,6 +32466,7 @@
                   "inputPreview": "{\"skill\":\"handoff\"}",
                   "inputHash": "ad1a50e84bf524bb1c2f09fa46c54fa484e7e2ba0d75606dce6075f374e30c82",
                   "ordinal": 184,
+                  "skillName": "handoff",
                   "resultPreview": "Launching skill: handoff",
                   "startedAtMs": 1788604166653,
                   "endedAtMs": 1788604166979,
@@ -34560,6 +34580,7 @@
                   "inputPreview": "{\"skill\":\"phase\",\"args\":\"0\"}",
                   "inputHash": "bc61020febda12fcf10111745728382d83fb94f9ecff943c447a952718fd13ce",
                   "ordinal": 43,
+                  "skillName": "phase",
                   "resultPreview": "Launching skill: phase",
                   "startedAtMs": 1788595586045,
                   "endedAtMs": 1788595586318,
@@ -37770,6 +37791,7 @@
                     }
                   ],
                   "model": "claude-opus-5",
+                  "agentType": "phase-verifier",
                   "endedAt": 1788600825200
                 },
                 {
@@ -38454,7 +38476,8 @@
                       "atMs": 1788601223364
                     }
                   ],
-                  "model": "claude-opus-5"
+                  "model": "claude-opus-5",
+                  "agentType": "phase-verifier"
                 },
                 {
                   "id": "toolu_0198PuPz1J7ZfugRZHencZJD",
@@ -40662,6 +40685,7 @@
                     }
                   ],
                   "model": "claude-opus-5",
+                  "agentType": "phase-verifier",
                   "endedAt": 1788603542286
                 },
                 {
@@ -40940,6 +40964,7 @@
                   "inputPreview": "{\"skill\":\"handoff\"}",
                   "inputHash": "ad1a50e84bf524bb1c2f09fa46c54fa484e7e2ba0d75606dce6075f374e30c82",
                   "ordinal": 184,
+                  "skillName": "handoff",
                   "resultPreview": "Launching skill: handoff",
                   "startedAtMs": 1788604166653,
                   "endedAtMs": 1788604166979,
@@ -43050,6 +43075,7 @@
               "inputPreview": "{\"skill\":\"phase\",\"args\":\"0\"}",
               "inputHash": "bc61020febda12fcf10111745728382d83fb94f9ecff943c447a952718fd13ce",
               "ordinal": 43,
+              "skillName": "phase",
               "resultPreview": "Launching skill: phase",
               "startedAtMs": 1788595586045,
               "endedAtMs": 1788595586318,
@@ -46260,6 +46286,7 @@
                 }
               ],
               "model": "claude-opus-5",
+              "agentType": "phase-verifier",
               "endedAt": 1788600825200
             },
             {
@@ -46944,7 +46971,8 @@
                   "atMs": 1788601223364
                 }
               ],
-              "model": "claude-opus-5"
+              "model": "claude-opus-5",
+              "agentType": "phase-verifier"
             },
             {
               "id": "toolu_0198PuPz1J7ZfugRZHencZJD",
@@ -49152,6 +49180,7 @@
                 }
               ],
               "model": "claude-opus-5",
+              "agentType": "phase-verifier",
               "endedAt": 1788603542286
             },
             {
@@ -49430,6 +49459,7 @@
               "inputPreview": "{\"skill\":\"handoff\"}",
               "inputHash": "ad1a50e84bf524bb1c2f09fa46c54fa484e7e2ba0d75606dce6075f374e30c82",
               "ordinal": 184,
+              "skillName": "handoff",
               "resultPreview": "Launching skill: handoff",
               "startedAtMs": 1788604166653,
               "endedAtMs": 1788604166979,

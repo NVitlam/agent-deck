@@ -2,6 +2,166 @@
 
 All notable changes to Agent Deck are documented here.
 
+## 0.9.0 - 2026-09-28 - Clean windows, Insights, About
+
+### Changed
+
+- **Every control has left the panels.** The deck, the session tree, the
+  tool-call drawer and the Stats view are content only now: no bars, no
+  buttons, no chips, no counts, no legend. You pan, drag, zoom and select;
+  everything else is a menu entry.
+- **One panel, four surfaces.** Deck, Statistics, Insights and About are
+  surfaces of the one Agent Deck panel, and the Menu switches between them in
+  place; nothing opens a second panel.
+- **The sidebar carries a strip of three tabs** - **Menu**, **View** and
+  **Tweaks** - one open at a time, and the same three are on the view's title
+  menu. Menu carries Open Deck, Open Statistics, Open Insights, Show
+  Diagnostics, Settings, Clear Stats History and About, and under Open
+  Insights, while an Insights provider offers them, Pick Agent, Show Payload
+  and Clear History. View carries Renderer,
+  Sessions, Engines, Layout and Sort as collapsible groups, each showing what
+  it is set to and folding up again once you choose, plus Inspector - the
+  drawer's status, order and tool filters - which appears while a drawer is
+  open, and Reset view, which acts on whichever surface you are on.
+- **Open Deck comes back to the deck from anywhere**, including from
+  Statistics, and keeps the renderer you chose. **Open Statistics always lands
+  on the Files tab.**
+- **Tweaks is three settings, each with a line saying what it does.** The
+  deck's opening order is `agentDeck.defaultOrdering` in Settings; the deck's
+  own order is View - Sort.
+- **Statistics keeps its five tabs** - Files, Tools, Loops & churn, Tokens,
+  Trends. Insights and About carry tiles, and a tile that opens a web page
+  asks first; with an Insights provider registered, Insights carries its
+  report list, its tick boxes, its export actions and Investigate Report when
+  the provider offers it. Nothing else on the
+  panel is pressed.
+- **The keyboard shortcuts are unchanged and are the editor's now.** `a` `c`
+  `o` `x` for the engines, `1` `2` `3` for the layout and `l` `r` `e` for
+  the sort, while the deck panel has focus. `Escape` still walks back out of a
+  session and `k` still collapses the tree.
+- **A session's state is on the session.** live, idle and ended are told apart
+  by colour AND by weight on every card and every row - warm against cool, and
+  light against dark - so the colour key beside the deck is gone with nothing
+  lost.
+- **Zooming is much less sensitive.** A wheel notch is 5% rather than 10%, and
+  a notch is now 100 pixels of travel rather than one wheel event: a mouse
+  behaves exactly as it did, one click one notch, and a trackpad flick moves
+  by how far it travelled instead of by how many events it sent. Pinch and
+  ctrl-wheel obey the same rule.
+- **The Tokens view no longer offers a copy button.** The model id is still
+  shown in a monospace element and is still selectable.
+- **The deck ordering setting now applies when a window opens.** Changing
+  `agentDeck.defaultOrdering` used to re-sort a deck that was already on
+  screen; it seeds the sort once, when the extension starts, and View - Sort
+  is what changes it afterwards.
+- **The drawer header wraps instead of running off the edge.** At narrow panel
+  widths the header’s fields used to be cut at the right-hand edge, and the
+  last of them was not drawn at all. They now break onto a second row, and at
+  1200px every field is drawn. A panel narrower than a single field can still
+  cut that field.
+- **Statistics records are version 3.** Records written by 0.7.x and 0.8.x are
+  still read, exactly as they were written - nothing on disk is rewritten - and
+  each one names the facts its version could not carry.
+- **Long names and paths are left out rather than shortened.** A file path over
+  1024 characters, or an agent type or skill name over 64, is omitted instead of
+  being cut short - a shortened path is still a path - and the record says what
+  was left out. For an agent type the field alone goes; for a file, a churn
+  chain or a skill the whole row goes, so that row's counts go with it. The
+  session keeps every other number it has, and is not excluded.
+
+### Added
+
+- **Two facts for reports, in the stats history.** A churn chain now carries
+  `fileErrors`, how many of the failing calls between its two writes named
+  the chain's own file (`errors` still counts every failing call between
+  them). A context-churn turn now carries `gapBeforeMs`, the time between it
+  and the turn before, or `null` where the engine states no time. Both are
+  added to the record's rows without a new format version; a stored record
+  written before them reads with `fileErrors:absent` or `gapBeforeMs:absent`.
+- **Milliseconds read as durations on the Insights surface.** Every evidence
+  value whose field names milliseconds - `longestGapMs`, `durationMsSum`,
+  `durationMsMax` and the rest - shows the number whole with a duration
+  beside it - `28,100,113 ms · 7 h 48 m` - in the preview, in the HTML,
+  Markdown and Copy exports, and on the long-idle resume tile. Costs and
+  ratios show two decimal places and per-minute rates a whole number, with the
+  exact value in the tooltip (and beside the value in the exports). The Insights
+  surface also carries one line under its fact tiles, with or without a
+  provider: deliberate failures (test-driven breakage) and accidental ones are
+  indistinguishable in this data.
+- **An Insights surface, from Menu - Open Insights.** With no Insights
+  provider registered it shows the facts the stats history holds for the last
+  7 days - sessions by engine, compactions, long-idle resumes, re-read loops,
+  failed tool calls, stalls, silent subagents, prompt and output tokens, and
+  the cost the engines reported themselves - each naming the field it was
+  counted from, beside one of three labelled examples and a tile to get Agent
+  Deck Insights. A long-idle resume is a gap of at least
+  `agentDeck.livenessThresholdMs`, and the tile states the threshold. The Get
+  tile, here and on About, opens the new Insights page of the project site,
+  which describes what Insights does and never does and carries the plans:
+  pay once for 1 month ($10), 6 months ($50) or 1 year ($100), or subscribe
+  monthly, every 6 months or yearly at the same amounts. With a provider
+  registered it shows that provider's reports on the left, newest first, and
+  the one you select on the right, with the same fact tiles below both. The
+  sidebar states which, beside Open Insights, whether or not the panel is
+  open.
+- **Insights reports export as HTML, Markdown or plain text.** The preview's
+  header carries HTML, Markdown and Copy; ticked reports export together, one
+  file per report into a folder you choose, never replacing a file already
+  there. The HTML page is self-contained and loads nothing; the Markdown
+  escapes the provider's text. Agent Deck will not write an export into a
+  directory it only reads, and exporting makes no network call.
+- **Investigate Report.** When the Insights provider offers it, the preview's
+  header carries Investigate Report beside Export. Pressing it hands the
+  selected report's run id to the provider and nothing else: Agent Deck builds
+  no prompt and starts no process. A provider that fails writes one line to
+  the Agent Deck output channel, and a message names the action.
+- **Extension API version 2.** `registerInsightsProvider` lets one extension
+  register as the Insights provider. Version 2 only adds to version 1. A
+  provider's data is plain JSON, checked field by field, and never executed. A
+  finding carries the provider's own text - an action (a short lead and a
+  detail), a cause and labelled evidence - and every string of it is capped
+  (names 64 characters, paths 1,024, free text 2,000) and checked for control
+  and bidirectional characters; a string that fails is dropped and counted,
+  never shortened. The Insights surface shows the lead first, the detail
+  behind an expand, the cause, then the evidence, with the run's facts above
+  them; a refused run shows its step and reason and can open its raw output
+  as an untitled document. A provider also answers for one run by id
+  (`getRun`), may offer Pick Agent, Show Payload, Clear History and
+  Investigate Report (`investigate`), and may
+  state one line of status under its name. Agent Deck never asks about your
+  Insights licence.
+- **An About entry**, as **Agent Deck: About** in the Command Palette and in
+  Menu. It switches the panel to a page in the deck's own look: a short
+  introduction, four tiles - Portfolio, Repository, LinkedIn and Sponsor - and
+  a footer with the version and the licence. While no Insights provider is
+  registered a fifth tile, Get Agent Deck Insights, is lit; once one is, About
+  names it and its version. A tile asks before it opens anything, naming the
+  host it will open in your browser, and the link then opens through VS Code;
+  the extension itself still makes no network call.
+- **The panel keeps what it shows while another editor covers it.** Opening
+  an editor in the panel's group, such as another extension's preview, and
+  closing it again used to bring the deck back reading "waiting for a session
+  to start" until the next update. The panel now keeps its document while it
+  is hidden.
+- **Insights provider lifecycle on the Agent Deck output channel.** One line
+  each time a provider registers, deregisters (saying whether it disposed its
+  registration or the window closed) or is refused. When a provider
+  deregisters, the sidebar and the Insights surface go back to the free state
+  and the deck and Statistics are left as they were. Clicking the selected
+  report again clears the preview.
+- **Which agent type a subagent was.** Each subagent in the statistics now
+  carries the type Claude Code recorded for it. The description beside it is
+  not carried, and a test holds the captured descriptions against every record
+  to keep it that way.
+- **Which skills a session invoked.** A session now records each `Skill` call by
+  name and by its position in that session’s calls. The arguments passed to the
+  skill are not recorded. Which later tool calls a skill produced is not
+  something Claude Code writes down, so Agent Deck does not claim it.
+- **A session id on Agent Deck: Open Statistics.** Given one, the Stats view
+  opens with that session’s Tokens card highlighted. Given none, it behaves
+  exactly as before. An id this window does not hold highlights nothing and is
+  not an error.
+
 ## 0.8.1 - 2026-09-15 - A first Claude Code session in a new folder
 
 ### Fixed

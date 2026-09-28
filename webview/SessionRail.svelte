@@ -134,6 +134,12 @@
     align-self: center;
   }
 
+  /*
+   * The same two channels the deck card carries (v0.9.0 DoD 9.14): warm/cool
+   * AND light/dark, plus the word itself. `ended` gains a COOL hue where it
+   * previously had only a dimmed dot, so the three states differ by hue and
+   * by weight on this surface too.
+   */
   .liveness-live {
     color: var(--vscode-charts-green, inherit);
     opacity: 1;
@@ -145,7 +151,12 @@
 
   .liveness-idle {
     color: var(--vscode-charts-yellow, inherit);
-    opacity: 1;
+    opacity: 0.85;
+  }
+
+  .liveness-ended {
+    color: var(--vscode-charts-blue, inherit);
+    opacity: 0.6;
   }
 
   .liveness-ended .dot {

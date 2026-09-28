@@ -225,13 +225,11 @@ describe('DoD 4.9b — the drawer follows the latest call, pins while an entry i
     expect(list(container).getAttribute('data-following')).toBe('true');
     expect(list(container).getAttribute('data-pinned')).toBe('false');
 
-    const select = one(container, TESTID.drawerOrderSelect) as HTMLSelectElement;
-    select.value = 'newest';
-    harness.flushSync(() => {
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-      select.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    expect(list(container).getAttribute('data-order')).toBe('newest');
+    // v0.9.0 DoD 9.14, ruling 5: the order is View -> Inspector -> Order, so
+    // it arrives as a prop. Same list, same node, the other order.
+    const newest = render({ node, drawerExpanded: true, callOrder: 'newest' });
+    expect(list(newest).getAttribute('data-order')).toBe('newest');
+    expect(list(newest).getAttribute('data-following')).toBe('true');
     expect(list(container).getAttribute('data-following')).toBe('true');
   });
 
@@ -296,13 +294,7 @@ describe('DoD 4.9b — the drawer follows the latest call, pins while an entry i
   });
 
   it('a user scroll away from the growing end stops following, and returning restarts it — in newest order too', () => {
-    const container = render({ node, drawerExpanded: true });
-    const select = one(container, TESTID.drawerOrderSelect) as HTMLSelectElement;
-    select.value = 'newest';
-    harness.flushSync(() => {
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-      select.dispatchEvent(new Event('input', { bubbles: true }));
-    });
+    const container = render({ node, drawerExpanded: true, callOrder: 'newest' });
     const el = list(container);
     Object.defineProperty(el, 'scrollHeight', { value: 900, configurable: true });
     Object.defineProperty(el, 'clientHeight', { value: 100, configurable: true });

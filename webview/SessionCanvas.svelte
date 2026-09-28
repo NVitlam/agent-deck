@@ -77,6 +77,7 @@
     TREE_FIT_PADDING,
     TREE_ZOOM_LIMITS,
     boundsOf,
+    createWheelNotcher,
     fitTo,
     panBy,
     transformAttr,
@@ -101,6 +102,7 @@
     onpan,
     onzoom,
     onreset,
+    resetEpoch = 0,
   }: {
     /** The session being looked at. Read, never mutated (G1). */
     session: SessionState;
@@ -148,6 +150,21 @@
      * table asked for is authoritative; a stale `canvasView` prop is not.
      */
     fitEpoch?: number;
+    /**
+     * View ▸ Reset view, as an EPOCH — v0.9.0 DoD 9.14, ruling 6.
+     *
+     * The Reset view button was on this surface until spec
+     * `Amendment 2026-09-20`; the menu entry replaces it, and the STORE
+     * decides which surface a press means because it is what knows the
+     * altitude. A counter rather than a boolean, for the reason
+     * `fitEpoch` above is one: "it happened again" is a thing a number can
+     * say and a flag cannot.
+     *
+     * What it runs is unchanged — {@link resetView}, i.e. A9.3's re-root on
+     * the session root and fit the whole tree. The entry moved; the
+     * behaviour did not.
+     */
+    resetEpoch?: number;
     /**
      * The drawer's rectangle in PAGE coordinates, or `null` when closed.
      * Measured by `App.svelte`, converted to the field's coordinates here, and
@@ -542,6 +559,19 @@
    * The entry-fit guard is claimed too, or the entry fit would run once more
    * over a frame the store already framed.
    */
+  /*
+   * The menu's Reset view (DoD 9.14). Skipped at its starting value, so a
+   * mount is not a reset: the entry fit has its own path and running both
+   * would fight over the same transform on the first frame.
+   */
+  let adoptedReset = resetEpoch;
+  $effect(() => {
+    const epoch = resetEpoch;
+    if (epoch === adoptedReset) return;
+    adoptedReset = epoch;
+    resetView();
+  });
+
   let adoptedEpoch = 0;
   let fitting = $state.raw(false);
   $effect(() => {
@@ -612,10 +642,14 @@
     (event.currentTarget as Element).releasePointerCapture?.(event.pointerId);
   }
 
+  /** The same accumulator the deck uses. See `viewport.ts` for the rule. */
+  const notcher = createWheelNotcher();
+
   function onWheel(event: WheelEvent): void {
     event.preventDefault();
+    const notches = notcher.feed(event.deltaY, event.deltaMode, event.timeStamp);
+    if (notches === 0) return;
     const rect = (event.currentTarget as Element).getBoundingClientRect();
-    const notches = event.deltaY < 0 ? 1 : -1;
     const next = zoomAbout(
       view,
       event.clientX - rect.left,
@@ -700,18 +734,23 @@
   );
   let totalNodes = $derived(isRefused ? 0 : visibleNodeCount(session, rootId));
 
-  /**
-   * The status line. It has to SAY when the auto-collapse fired: a tree that
-   * silently stopped drawing two thirds of itself is a tree the user reads as
-   * complete.
+  /*
+   * THE STATUS LINE WAS HERE UNTIL v0.9.0 DoD 9.14. It said "n of m nodes",
+   * and when the auto-collapse had fired it said so in words, because a tree
+   * that silently stopped drawing two thirds of itself is a tree the user
+   * reads as complete.
+   *
+   * Spec `Amendment 2026-09-20` allows no counts on a surface, so the line is
+   * gone — but the FACTS it carried are not. `data-drawn`, `data-total` and
+   * `data-hidden` join `data-auto-collapsed` on the section: attributes
+   * render nothing and are not chrome, and they keep the auto-collapse
+   * assertable rather than leaving the one behaviour that hides content with
+   * no evidence at all.
+   *
+   * THE USER-VISIBLE HALF IS A REAL COST AND IS STATED HERE: a collapsed
+   * tree no longer says so on the surface. The `+n ▾` badge on each collapsed
+   * node is what remains, and ruling 2 keeps it as a content exception.
    */
-  let statusText = $derived(
-    isRefused
-      ? 'refused — no tree is drawn for this session'
-      : autoCollapsed
-        ? `${String(drawn.length)} of ${String(totalNodes)} nodes — collapsed to depth ${String(COLLAPSE_DEPTH)} automatically above ${String(AUTO_COLLAPSE_NODES)} nodes; ${String(hiddenTotal)} hidden`
-        : `${String(drawn.length)} of ${String(totalNodes)} nodes${hiddenTotal > 0 ? `, ${String(hiddenTotal)} hidden` : ''}`,
-  );
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -728,52 +767,24 @@
   data-auto-collapsed={String(autoCollapsed)}
   data-cells={String(nodes.length)}
   data-parked={String(parkedItems.length)}
+  data-drawn={String(drawn.length)}
+  data-total={String(totalNodes)}
+  data-hidden={String(hiddenTotal)}
   aria-label="Session tree"
   onkeydown={onKeyDown}
 >
-  <div class="bar">
-    <!-- The breadcrumb. Every ancestor is a real button, and the path is the
-         tree's own parent chain — see `crumbs` above. -->
-    <nav class="crumbs" data-testid="tree-crumbs" aria-label="Focus path">
-      <button
-        type="button"
-        class="crumb"
-        data-testid="tree-crumb-deck"
-        onclick={() => ondeck?.()}>deck</button
-      >
-      {#each crumbs as crumb, i (crumb.id)}
-        <span class="sep" aria-hidden="true">/</span>
-        <button
-          type="button"
-          class="crumb"
-          data-testid="tree-crumb"
-          data-crumb-id={crumb.id}
-          data-crumb-index={String(i)}
-          aria-current={crumb.id === rootId ? 'page' : undefined}
-          onclick={() => focusOn(crumb.id)}
-          >{i === 0
-            ? session.root.label !== ''
-              ? session.root.label
-              : session.sessionId
-            : crumb.label}</button
-        >
-      {/each}
-    </nav>
-    <span class="status" data-testid="tree-status" data-nodes={String(drawn.length)}
-      >{statusText}</span
-    >
-    <!-- Always present, never conditional on the view being off-identity: a
-         control that appears only once you are lost is a control you cannot
-         learn. `data-identity` says whether pressing it would change
-         anything. -->
-    <button
-      class="reset"
-      type="button"
-      data-testid={TESTID.canvasReset}
-      data-identity={String(atIdentity)}
-      onclick={resetView}>Reset view</button
-    >
-  </div>
+  <!--
+    THE BAR WAS HERE UNTIL v0.9.0 DoD 9.14: the "deck" crumb, one button per
+    ancestor, the "n of m nodes" status and Reset view.
+
+    Ruling 2 (2026-09-20) removes the breadcrumbs outright — back is Escape,
+    which this component still handles, and Menu ▸ Open Deck. Ruling 6 gives
+    Reset view one entry in View, which the STORE routes to whichever surface
+    is active. The status line went with the amendment's "no counts" clause.
+
+    `crumbs` survives below and is not dead: Escape reads it to find the
+    parent to re-root on, which is the navigation the crumbs used to duplicate.
+  -->
 
   {#if !isRefused}
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -867,62 +878,10 @@
     transition: transform 280ms cubic-bezier(0.2, 0.7, 0.2, 1);
   }
 
-  .bar {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    flex-wrap: wrap;
-    padding: 3px 8px;
-    font-size: 0.85em;
-    border-bottom: 1px solid var(--vscode-panel-border, transparent);
-  }
-
-  .crumbs {
-    display: flex;
-    align-items: baseline;
-    gap: 3px;
-    min-width: 0;
-  }
-
-  .crumb {
-    font: inherit;
-    color: var(--vscode-textLink-foreground, inherit);
-    background: transparent;
-    border: none;
-    padding: 0 2px;
-    cursor: pointer;
-  }
-
-  .crumb[aria-current='page'] {
-    color: var(--vscode-foreground);
-    font-weight: 600;
-  }
-
-  .crumb:focus-visible,
-  .reset:focus-visible {
-    outline: 1px solid var(--vscode-focusBorder, currentColor);
-    outline-offset: 1px;
-  }
-
-  .sep {
-    opacity: 0.6;
-  }
-
-  .status {
-    margin-left: auto;
-    opacity: 0.75;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .reset {
-    font: inherit;
-    color: var(--vscode-foreground);
-    background: var(--vscode-editor-background);
-    border: 1px solid var(--vscode-panel-border, transparent);
-    border-radius: 3px;
-    padding: 0 6px;
-    cursor: pointer;
-  }
+  /*
+   * The bar's rules were here until v0.9.0 DoD 9.14: bar, crumbs, crumb, sep,
+   * status and reset. Every element they styled is gone.
+   */
 
   /* Every colour is a VS Code theme variable. The frozen mockup hardcodes a
      dark palette only because it lives outside VS Code (C7.7). */

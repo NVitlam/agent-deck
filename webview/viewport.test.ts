@@ -40,7 +40,11 @@ describe('the design constants', () => {
   it('carries the two zoom ranges and the notch factor', () => {
     expect(DECK_ZOOM_LIMITS).toEqual({ min: 0.5, max: 2 });
     expect(TREE_ZOOM_LIMITS).toEqual({ min: 0.4, max: 2 });
-    expect(ZOOM_FACTOR).toBe(1.1);
+    // v0.9.0 DoD 9.14: 1.05, from 1.1, and a notch is 100 px of wheel
+    // TRAVEL rather than one wheel event. `webview/zoom.test.ts` owns the
+    // golden that locks both, and states the literals as well as the golden
+    // so a regenerated file cannot agree with itself.
+    expect(ZOOM_FACTOR).toBe(1.05);
   });
 
   it('carries the two fit paddings', () => {
@@ -109,9 +113,9 @@ describe('zooming about the cursor', () => {
 
   it('scales by the factor per notch', () => {
     const view = zoomAbout({ x: 0, y: 0, k: 1 }, 0, 0, 1, DECK_ZOOM_LIMITS);
-    expect(round(view.k)).toBe(round(1.1));
+    expect(round(view.k)).toBe(round(ZOOM_FACTOR));
     const twice = zoomAbout(view, 0, 0, 1, DECK_ZOOM_LIMITS);
-    expect(round(twice.k)).toBe(round(1.1 * 1.1));
+    expect(round(twice.k)).toBe(round(ZOOM_FACTOR * ZOOM_FACTOR));
   });
 
   it('clamps to the deck range 0.5 to 2', () => {
@@ -141,7 +145,7 @@ describe('zooming about the cursor', () => {
 
   it('accepts a fractional notch, for a trackpad', () => {
     const view = zoomAbout({ x: 0, y: 0, k: 1 }, 0, 0, 0.5, DECK_ZOOM_LIMITS);
-    expect(round(view.k)).toBe(round(Math.sqrt(1.1)));
+    expect(round(view.k)).toBe(round(Math.sqrt(ZOOM_FACTOR)));
   });
 });
 

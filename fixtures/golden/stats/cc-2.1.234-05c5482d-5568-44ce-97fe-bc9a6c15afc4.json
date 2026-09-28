@@ -1,5 +1,5 @@
 {
-  "statsSchemaVersion": 2,
+  "statsSchemaVersion": 3,
   "sessionId": "05c5482d-5568-44ce-97fe-bc9a6c15afc4",
   "engine": "cc",
   "projectSlug": "c--Users-dev-projects-agent-deck",
@@ -30,7 +30,8 @@
       "toolCalls": 1,
       "silent": false,
       "resultUnreceived": false,
-      "model": "claude-opus-5"
+      "model": "claude-opus-5",
+      "agentType": "general-purpose"
     },
     {
       "agentId": "a32b33ebf1b92e214",
@@ -43,7 +44,8 @@
       "toolCalls": 1,
       "silent": false,
       "resultUnreceived": false,
-      "model": "claude-opus-5"
+      "model": "claude-opus-5",
+      "agentType": "general-purpose"
     },
     {
       "agentId": "a1a53f42c5eca8824",
@@ -56,7 +58,8 @@
       "toolCalls": 1,
       "silent": false,
       "resultUnreceived": false,
-      "model": "claude-opus-5"
+      "model": "claude-opus-5",
+      "agentType": "general-purpose"
     },
     {
       "agentId": "a3ecf86bbfb853726",
@@ -69,7 +72,8 @@
       "toolCalls": 8,
       "silent": false,
       "resultUnreceived": false,
-      "model": "claude-opus-5"
+      "model": "claude-opus-5",
+      "agentType": "general-purpose"
     }
   ],
   "files": [],
@@ -101,11 +105,13 @@
   ],
   "loops": [],
   "churn": [],
+  "skills": [],
   "contextChurn": [
     {
       "agentId": "a3ecf86bbfb853726",
       "ordinal": 3,
-      "delta": 5460
+      "delta": 5460,
+      "gapBeforeMs": 6276
     }
   ],
   "compactions": [],

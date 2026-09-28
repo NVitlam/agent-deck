@@ -102,23 +102,10 @@ export function shortId(id: string): string {
   return id.length > 8 ? id.slice(0, 8) : id;
 }
 
-/**
- * Copy text to the clipboard, where the host allows it.
- *
- * `navigator.clipboard` is the only channel and it is LOCAL: no fetch, no
- * socket, nothing leaves the machine (G5). A webview that has not been
- * granted it simply does nothing, and the id stays selectable on screen.
- * Returns whether a copy was attempted, so a test can assert the wiring.
+/*
+ * `copyText` was here until v0.9.0 DoD 9.14, ruling 7. Its one caller was the
+ * Tokens view's copy button, which is removed; a clipboard helper with no
+ * caller is a capability the bundle carries for nothing, and
+ * `egress.test.ts`'s census of what this bundle can reach is one entry
+ * shorter for it.
  */
-export function copyText(text: string): boolean {
-  const nav = (globalThis as { navigator?: { clipboard?: { writeText(t: string): Promise<void> } } })
-    .navigator;
-  const clipboard = nav?.clipboard;
-  if (clipboard === undefined || typeof clipboard.writeText !== 'function') return false;
-  try {
-    void clipboard.writeText(text).catch(() => {});
-  } catch {
-    return false;
-  }
-  return true;
-}

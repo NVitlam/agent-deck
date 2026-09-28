@@ -95,6 +95,10 @@ const GLOBAL_NAME = 'AgentDeckCanvasHarness';
 /** The in-memory entry point esbuild bundles. */
 const ENTRY = [
   "export { default as SessionCanvas } from './SessionCanvas.svelte';",
+  // v0.9.0 DoD 9.14: the rig owns `resetEpoch` as `$state` and exports the
+  // bump, because View ▸ Reset view reaches this surface as a prop that
+  // CHANGES and `mount(Component, { props })` reads a plain object once.
+  "export { default as CanvasRig } from './rigs/CanvasRig.svelte';",
   "export { mount, unmount, flushSync } from 'svelte';",
 ].join('\n');
 
@@ -137,6 +141,8 @@ process.stdout.write(js.text);
 
 interface CanvasHarness {
   SessionCanvas: unknown;
+  /** The rig that owns `resetEpoch` (v0.9.0 DoD 9.14). Test-only. */
+  CanvasRig: unknown;
   mount(
     component: unknown,
     options: { target: HTMLElement; props?: Record<string, unknown> },
@@ -181,9 +187,26 @@ interface Mounted {
 const mounted: Mounted[] = [];
 
 function render(props: Record<string, unknown>): HTMLElement {
+  return renderRig(props).container;
+}
+
+/**
+ * Mount through the RIG, and keep what it exports.
+ *
+ * `reset()` is the only thing the rig adds, and it is the only way to ask
+ * this surface for View ▸ Reset view: the entry is a menu item now, the
+ * component takes it as an epoch, and a prop that only ever changes cannot
+ * be delivered by a props object Svelte reads once.
+ */
+function renderRig(props: Record<string, unknown>): {
+  container: HTMLElement;
+  reset: () => void;
+} {
   const container = document.createElement('div');
   document.body.appendChild(container);
-  const app = harness.mount(harness.SessionCanvas, { target: container, props });
+  const app = harness.mount(harness.CanvasRig, { target: container, props }) as {
+    reset: () => void;
+  };
   harness.flushSync();
   mounted.push({
     container,
@@ -192,7 +215,14 @@ function render(props: Record<string, unknown>): HTMLElement {
       container.remove();
     },
   });
-  return container;
+  return {
+    container,
+    reset: () => {
+      harness.flushSync(() => {
+        app.reset();
+      });
+    },
+  };
 }
 
 afterEach(() => {
@@ -913,23 +943,37 @@ describe('focus / re-root (DoD 7.6)', () => {
     dblclick(nodeFor(container, 'agent-1'));
     dblclick(nodeFor(container, 'agent-2'));
 
-    const crumbs = all(container, 'tree-crumb').map((c) => c.dataset['crumbId']);
-    expect(crumbs).toStrictEqual(chainTo('agent-2'));
-    expect(crumbs).toStrictEqual(['root', 'agent-1', 'agent-2']);
-    // The deck crumb leads it, so the path reads `deck / … / …`.
-    expect(one(container, 'tree-crumb-deck').textContent).toBe('deck');
-    expect(all(container, 'tree-crumb')[2]?.getAttribute('aria-current')).toBe('page');
+    /*
+     * v0.9.0 DoD 9.14, ruling 2: the breadcrumbs are gone and back is Escape.
+     * The PATH is not — it is what Escape walks — so the two independent
+     * derivations still meet, read now by walking out one step at a time.
+     */
+    const walked = [one(container, TESTID.canvas).dataset['rootId'] ?? ''];
+    for (let step = 0; step < 4; step += 1) {
+      const at = one(container, TESTID.canvas).dataset['rootId'] ?? '';
+      if (one(container, TESTID.canvas).dataset['atSessionRoot'] === 'true') break;
+      press(nodeFor(container, at), 'Escape');
+      walked.unshift(one(container, TESTID.canvas).dataset['rootId'] ?? '');
+    }
+    expect(walked).toStrictEqual(chainTo('agent-2'));
+    expect(walked).toStrictEqual(['root', 'agent-1', 'agent-2']);
+    // ...and the surface carries no crumb to click.
+    expect(all(container, 'tree-crumb')).toHaveLength(0);
+    expect(all(container, 'tree-crumb-deck')).toHaveLength(0);
   });
 
-  it('makes every ancestor crumb clickable, and clicking one re-roots there', () => {
+  it('Escape re-roots one ancestor at a time, which is what replaced the crumbs', () => {
+    // Ruling 2 (DoD 9.14). The crumbs were three buttons; Escape is the one
+    // gesture that does what they did, and it is asserted at every step
+    // rather than only at the end — a handler that jumped straight to the
+    // root would pass a test that only looked at where it stopped.
     const container = render({ session: liveSession() });
     dblclick(nodeFor(container, 'agent-1'));
     dblclick(nodeFor(container, 'agent-2'));
-    const crumbs = all(container, 'tree-crumb');
-    expect(crumbs.map((c) => c.tagName)).toStrictEqual(['BUTTON', 'BUTTON', 'BUTTON']);
-    click(crumbs[1] as HTMLElement);
+    expect(one(container, TESTID.canvas).dataset['rootId']).toBe('agent-2');
+    press(nodeFor(container, 'agent-2'), 'Escape');
     expect(one(container, TESTID.canvas).dataset['rootId']).toBe('agent-1');
-    click(crumbs[0] as HTMLElement);
+    press(nodeFor(container, 'agent-1'), 'Escape');
     expect(one(container, TESTID.canvas).dataset['rootId']).toBe('root');
   });
 
@@ -1020,7 +1064,8 @@ describe('focus / re-root (DoD 7.6)', () => {
     // far left with the root off-screen. On the one control whose whole job is
     // to undo a lost view.
     const state = liveSession();
-    const container = render({ session: state, size: { width: 960, height: 640 } });
+    const rig = renderRig({ session: state, size: { width: 960, height: 640 } });
+    const container = rig.container;
 
     // Go somewhere: focus a child, then pan and zoom away from it.
     dblclick(nodeFor(container, 'agent-1'));
@@ -1031,7 +1076,10 @@ describe('focus / re-root (DoD 7.6)', () => {
     wheel(svg, -100, 200, 100);
     expect(one(container, TESTID.canvas).dataset['focus']).toBe('agent-1');
 
-    click(one(container, TESTID.canvasReset));
+    // Ruling 6 (DoD 9.14): the Reset view BUTTON is gone and the menu entry
+    // reaches this surface as `resetEpoch`. What it runs is unchanged, which
+    // is exactly what the rest of this test measures.
+    rig.reset();
 
     // BACK AT THE SESSION ROOT — "always start from the main session".
     expect(one(container, TESTID.canvas).dataset['focus']).toBe(state.root.id);
@@ -1223,10 +1271,16 @@ describe('collapse', () => {
     const container = render({ session: state });
     expect(one(container, TESTID.canvas).dataset['autoCollapsed']).toBe('true');
     expect(treeNodes(container)).toHaveLength(57);
-    const status = one(container, 'tree-status').textContent ?? '';
-    expect(status).toContain('automatically');
-    expect(status).toContain('57 of 400 nodes');
-    expect(status).toContain('343 hidden');
+    // v0.9.0 DoD 9.14: the status LINE is gone (no counts on a surface) and
+    // the facts it carried are attributes, which render nothing. The
+    // auto-collapse is the one behaviour that hides content, so it keeps its
+    // evidence.
+    const canvas = one(container, TESTID.canvas);
+    expect(canvas.dataset['autoCollapsed']).toBe('true');
+    expect(canvas.dataset['drawn']).toBe('57');
+    expect(canvas.dataset['total']).toBe('400');
+    expect(canvas.dataset['hidden']).toBe('343');
+    expect(all(container, 'tree-status')).toHaveLength(0);
   });
 
   it('does NOT auto-collapse a tree at the limit — the rule is strictly greater', () => {
@@ -1234,7 +1288,9 @@ describe('collapse', () => {
     expect(visibleNodeCount(state, 'root')).toBeLessThanOrEqual(AUTO_COLLAPSE_NODES);
     const container = render({ session: state });
     expect(one(container, TESTID.canvas).dataset['autoCollapsed']).toBe('false');
-    expect(one(container, 'tree-status').textContent).toBe('3 of 3 nodes');
+    expect(one(container, TESTID.canvas).dataset['drawn']).toBe('3');
+    expect(one(container, TESTID.canvas).dataset['total']).toBe('3');
+    expect(one(container, TESTID.canvas).dataset['hidden']).toBe('0');
   });
 });
 
@@ -1364,7 +1420,9 @@ describe('refused sessions render no tree (C7.4, G3)', () => {
     expect(one(container, TESTID.canvas).dataset['refused']).toBe('true');
     expect(interiorCount(container)).toBe(0);
     expect(container.querySelector('svg.field')).toBeNull();
-    expect(one(container, 'tree-status').textContent).toContain('refused');
+    // The refusal is the attribute, not a sentence on a status line that no
+    // longer exists: a refused session draws NOTHING, which is G3's point.
+    expect(one(container, TESTID.canvas).dataset['total']).toBe('0');
   });
 
   it('DIRECTION 2 — a schemaMismatch on a session the wire still calls live', () => {

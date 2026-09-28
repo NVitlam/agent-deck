@@ -1,0 +1,115 @@
+{
+  "note": "v0.9.0 DoD 9.14 — the measured zoom step, locked. Generated from webview/viewport.ts; webview/zoom.test.ts owns the gestures and compares. A change here is a decision about how zooming feels.",
+  "constants": {
+    "zoomFactor": 1.05,
+    "notchDelta": 100,
+    "gestureIdleMs": 120
+  },
+  "gestures": {
+    "mouse: one detent down": {
+      "notches": [
+        -1
+      ],
+      "scale": 0.952381
+    },
+    "mouse: one detent up": {
+      "notches": [
+        1
+      ],
+      "scale": 1.05
+    },
+    "mouse: three detents up, one gesture": {
+      "notches": [
+        1,
+        1,
+        1
+      ],
+      "scale": 1.157625
+    },
+    "trackpad: ten small events summing to one detent": {
+      "notches": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0
+      ],
+      "scale": 1.05
+    },
+    "trackpad: a long flick, 30 events of -12": {
+      "notches": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "scale": 1.157625
+    },
+    "firefox lines: three lines up is one detent": {
+      "notches": [
+        1
+      ],
+      "scale": 1.05
+    },
+    "pages: one page is one detent": {
+      "notches": [
+        1
+      ],
+      "scale": 1.05
+    },
+    "a reversal inside one gesture cancels the carry": {
+      "notches": [
+        0,
+        0,
+        -1
+      ],
+      "scale": 0.952381
+    },
+    "a pause longer than the idle window drops the carry": {
+      "notches": [
+        0,
+        0,
+        1
+      ],
+      "scale": 1.05
+    },
+    "zero and non-finite deltas do nothing": {
+      "notches": [
+        0,
+        0
+      ],
+      "scale": 1
+    }
+  }
+}

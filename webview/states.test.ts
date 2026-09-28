@@ -43,7 +43,8 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { SessionState, WebviewToHostMessage } from '../src/model/events.js';
 import type { Store } from './store.js';
 import type { WebviewHarness } from './testkit.js';
-import { all, animated, hasAnimatedAncestor, loadHarness, one, press } from './testkit.js';
+import { controlsForMode } from './testkit.js';
+import { all, animated, hasAnimatedAncestor, loadHarness, one, press, viewControls } from './testkit.js';
 import {
   ANIMATED_CLASSES,
   CRACKED_CLASS,
@@ -167,13 +168,15 @@ afterEach(() => {
 /**
  * Put the panel into `mode`.
  *
- * Goes through the STORE rather than through the toggle button, and only the
- * `both views` blocks below click the button — that separation is deliberate.
- * A test that reached the list view by clicking would fail for two reasons at
- * once if the toggle broke, and the toggle has its own row.
+ * v0.9.0 DoD 9.14: through the `viewControls` MESSAGE, which is what
+ * production sends. There is no toggle to press — spec
+ * `Amendment 2026-09-20` moved the pair to View ▸ Canvas | List — so the
+ * separation this comment used to argue for is simply the only path there is.
  */
 function useView(panel: Panel, mode: ViewMode): void {
-  act(() => panel.store.setViewMode(mode));
+  act(() => {
+    panel.store.handleMessage(viewControls(controlsForMode(mode)));
+  });
   expect(one(panel.container, 'app').dataset['viewMode']).toBe(mode);
 }
 
@@ -1239,23 +1242,29 @@ describe('both surfaces are projections of the same store (C7.2)', () => {
     expect(panel.sent).toStrictEqual([]);
   });
 
-  it('the in-panel toggle swaps the surface and nothing else', () => {
+  it('the host swaps the surface and nothing else', () => {
+    /*
+     * v0.9.0 DoD 9.14. The in-panel Canvas/List toggle was here until spec
+     * `Amendment 2026-09-20`; the pair is View ▸ Canvas | List now. What the
+     * test is about is unchanged — the surface swaps and NOTHING ELSE moves —
+     * and the renderer still sends nothing, which it now cannot.
+     */
     const panel = render();
     send({ type: 'snapshot', sessions: [liveSession()] });
-    const toggle = one(panel.container, TESTID.viewToggle);
-    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    expect(one(panel.container, 'app').dataset['viewMode']).toBe('canvas');
 
-    click(toggle);
+    send(viewControls({ renderer: 'list' }));
     expect(one(panel.container, 'app').dataset['viewMode']).toBe('list');
     expect(all(panel.container, TESTID.deck)).toHaveLength(0);
     expect(all(panel.container, 'session-rail')).toHaveLength(1);
-    expect(one(panel.container, TESTID.viewToggle).getAttribute('aria-pressed')).toBe('false');
 
-    click(one(panel.container, TESTID.viewToggle));
+    send(viewControls({ renderer: 'canvas' }));
     expect(one(panel.container, 'app').dataset['viewMode']).toBe('canvas');
     expect(all(panel.container, TESTID.deck)).toHaveLength(1);
+    expect(all(panel.container, 'session-rail')).toHaveLength(0);
 
-    // Still no message: the surface is webview-local UI state (C7.7).
+    // Still no message: the mode is the host's, and the renderer has no
+    // message that could carry an opinion about it back.
     expect(panel.sent).toStrictEqual([]);
   });
 

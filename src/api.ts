@@ -9,6 +9,12 @@
  * and gets exactly three things: the live records, the stored records, and an
  * event. It gets `StatsRecord`s and nothing else.
  *
+ * **API v2 adds one door in the other direction** (v0.9.0 DoD 9.30):
+ * `registerInsightsProvider`, through which the Insights extension offers the
+ * parent a provider to RENDER. Nothing more leaves through it — the parent
+ * hands the provider no record and no callback — and what comes in is checked
+ * field by field in `src/insights-provider.ts` before any surface sees it.
+ *
  * ## What crosses this door, and what never does
  *
  * Spec §H: *"Exposes `StatsRecord` only — never `SessionState`, never previews,
@@ -71,13 +77,40 @@
  * testable in a plain node process with an injected clock.
  */
 
+import type { InsightsProvider, InsightsProviderRegistry } from './insights-provider.js';
 import type { Scheduler, TimerHandle } from './parser/tailer.js';
 import type { StatsRecord } from './stats/schema.js';
 import { validateStatsRecord } from './stats/schema.js';
 import type { StoredStatsRecord } from './stats/store.js';
 
-/** The API's version. Bumped on a breaking change; additive fields do not bump it. */
-export const API_VERSION = 1;
+export type {
+  FindingActionView,
+  FindingEvidenceView,
+  FindingSetRefusalView,
+  FindingSetView,
+  FindingSinceLastRun,
+  FindingView,
+  InsightsAgentKind,
+  InsightsConfidence,
+  InsightsFindingKind,
+  InsightsProviderAbout,
+  InsightsProviderAction,
+  InsightsRunState,
+  RunSummary,
+} from './model/events.js';
+export type { InsightsProvider } from './insights-provider.js';
+
+/**
+ * The API's version.
+ *
+ * **2 since v0.9.0 DoD 9.30** (spec `Amendment 2026-09-21 — One window`):
+ * `registerInsightsProvider` was added. The bump is the amendment's own word —
+ * "additive; `API_VERSION` 2; existing v1 members unchanged" — and it is what
+ * lets a consumer ask one number whether the member it wants is there, rather
+ * than probing for a function. Every v1 member is unchanged, so a v1 consumer
+ * keeps working without reading this.
+ */
+export const API_VERSION = 2;
 
 /**
  * The live event's per-session floor, in milliseconds. The locked number
@@ -124,6 +157,16 @@ export interface AgentDeckApi {
   getStoredStats(query?: StoredStatsQuery): Promise<StoredStatsRecord[]>;
   /** Every flush, plus a live event at most once per 2 s per session. */
   readonly onDidUpdateStats: ApiEvent<StatsRecord>;
+  /**
+   * API v2 — register the ONE Insights provider (v0.9.0 DoD 9.30).
+   *
+   * Returns a disposable that unregisters it; disposing returns the Insights
+   * surface to its free state. Throws a `TypeError` for anything that is not
+   * a provider of this contract, and an `Error` naming both parties when a
+   * provider is already registered. See `src/insights-provider.ts` for what
+   * the parent reads, calls and checks — and that it calls nothing else.
+   */
+  registerInsightsProvider(provider: InsightsProvider): ApiDisposable;
 }
 
 /**
@@ -171,6 +214,9 @@ export const MODEL_ONLY_KEYS = [
   'inputHash',
   'resultPreview',
   'truncated',
+  // v0.9.0 DoD 9.3. MODEL-ONLY: a record states skills as `skills[].name`,
+  // never as a `skillName` key, so this stays a refusable name.
+  'skillName',
 ] as const;
 
 /**
@@ -194,6 +240,10 @@ export const MODEL_SHARED_KEYS = [
   'filePath',
   'ordinal',
   'durationMs',
+  // v0.9.0 DoD 9.2. SHARED: `AgentStats.agentType` really carries it, which
+  // is what guard (4) in `api.test.ts` checks — the shared list cannot be
+  // used to silence guard (1) for a key no record has.
+  'agentType',
 ] as const;
 
 const MODEL_ONLY: ReadonlySet<string> = new Set(MODEL_ONLY_KEYS);
@@ -410,10 +460,17 @@ function checkQuery(query: StoredStatsQuery): void {
 /**
  * Build the object `activate()` returns. Frozen: a consumer cannot replace a
  * method on it for every other consumer.
+ *
+ * `providers` is REQUIRED and has no default. A registry built here by
+ * default would be a registry nothing else reads — a provider would register
+ * into it, succeed, and change no surface — which is the one-assignment-site
+ * shape this repository keeps shipping. `activate()` passes the one the
+ * sidebar and the panel read.
  */
 export function createAgentDeckApi(
   sources: ApiSources,
   updates: StatsUpdateEmitter,
+  providers: InsightsProviderRegistry,
   onRefused?: (reason: string) => void,
 ): AgentDeckApi {
   const passing = <T extends StatsRecord>(records: readonly T[]): T[] => {
@@ -443,5 +500,7 @@ export function createAgentDeckApi(
       return passing(sources.readStored(bounded));
     },
     onDidUpdateStats: updates.event,
+    registerInsightsProvider: (provider: InsightsProvider): ApiDisposable =>
+      providers.register(provider),
   });
 }

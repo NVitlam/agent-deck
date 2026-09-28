@@ -57,8 +57,8 @@ describe('DoD 7.14 — a record 0.7.1 wrote is read by 0.8.0', () => {
     expect(raw['statsSchemaVersion']).toBe(1);
     expect(raw['timing']).toBeUndefined();
     expect((raw['agents'] as Record<string, unknown>[]).every((a) => a['resultUnreceived'] === undefined)).toBe(true);
-    expect(STATS_SCHEMA_VERSION).toBe(2);
-    expect(READABLE_STATS_SCHEMA_VERSIONS).toStrictEqual([1, 2]);
+    expect(STATS_SCHEMA_VERSION).toBe(3);
+    expect(READABLE_STATS_SCHEMA_VERSIONS).toStrictEqual([1, 2, 3]);
   });
 
   it('is READ — not skipped, not counted malformed — with every table intact', () => {

@@ -1,0 +1,39 @@
+{
+  "title": "Agent Deck Insights 0.2.0",
+  "rows": [
+    {
+      "runId": "run-3",
+      "state": "ok",
+      "when": "2026-09-21 12:00 UTC",
+      "outcome": "8 findings",
+      "agent": "Claude Code"
+    },
+    {
+      "runId": "run-2",
+      "state": "empty",
+      "when": "2026-09-20 12:00 UTC",
+      "outcome": "no findings",
+      "agent": "Codex"
+    },
+    {
+      "runId": "run-1",
+      "state": "refused",
+      "when": "2026-09-19 12:00 UTC",
+      "outcome": "refused",
+      "agent": "Claude Code"
+    },
+    {
+      "runId": "run-4",
+      "state": "ok",
+      "when": "2026-09-18 12:00 UTC",
+      "outcome": "1 finding",
+      "agent": "Claude Code"
+    }
+  ],
+  "preview": {
+    "runId": "run-2",
+    "report": null,
+    "missing": "The provider has no report for this run.",
+    "dropped": "1 value from this report did not pass the check and is not shown"
+  }
+}

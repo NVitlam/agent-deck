@@ -1,0 +1,23 @@
+main .insights data-state="provider" data-testid="insights-surface"
+  section .provider
+    h1 "Agent Deck Insights 0.2.0"
+    p .line data-testid="insights-status" "licensed until 2027-09-23"
+    div .panes
+      div .list data-testid="insights-report-list"
+        h2 "Reports"
+        div .report-row data-state="ok" data-testid="insights-report-row"
+          input aria-label="Tick the report of 2026-09-21 10:00 UTC" data-testid="insights-report-tick"
+          button .report-select data-testid="insights-report-select"
+            span .strong "<instant>"
+            span .note "2 findings · Claude Code"
+        div .report-row data-state="refused" data-testid="insights-report-row"
+          input aria-label="Tick the report of 2026-09-20 09:30 UTC" data-testid="insights-report-tick"
+          button .report-select data-testid="insights-report-select"
+            span .strong "<instant>"
+            span .note "refused · Codex"
+        button .action data-testid="insights-export-ticked" disabled="" "Export ticked (0)"
+      div .preview data-testid="insights-preview"
+        p .line data-testid="insights-preview-empty" "Select a report to preview / download."
+    section .facts
+      h2 "Stored facts"
+      p .line data-reason="loading" data-testid="insights-facts-state" "The stored history has not been read yet."

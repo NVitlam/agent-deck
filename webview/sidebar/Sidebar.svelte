@@ -1,96 +1,121 @@
 <!--
-  The activity-bar sidebar — v0.8.0 Phase 7, DoD 7.6.
+  The activity-bar sidebar — v0.9.0 DoD 9.17, spec `Amendment 2026-09-20 —
+  Sidebar shape (supersedes the TreeView ruling)`.
 
-  TWO TABS, and that is the whole of this component: `Menu` (v0.7.0's five
-  commands, untouched) and `Tweaks` (the four settings). The DoD asks for a
-  tab, not a sixth menu entry, and the entries are pinned elsewhere by count
-  and by order — `manifest.test.ts` and `readme.test.ts` both read that list —
-  so the list this file passes down is `SIDEBAR_MENU` unchanged.
+  A HORIZONTAL STRIP AND ONE PAGE. Menu | View | Tweaks, one open at a time.
+  The native `TreeView` that shipped in the morning put every section on
+  screen at once with no room for an explanation under anything; this is the
+  shape the user drew instead. (The strip had a fourth tab, Insights, until
+  v0.9.0 DoD 9.28 — spec `Amendment 2026-09-21 — One window` made Insights a
+  surface of the panel, opened from Menu.)
 
-  WHICH TAB IS SHOWING IS THE ONE PIECE OF STATE HERE, and it is not the state
-  DoD 7.6 forbids. That rule is about the four SETTINGS: the panel stores no
-  value of theirs, because `settings.json` holds them. Which tab a person is
-  looking at is view state of exactly the kind `viewMode` already is in
-  `store.ts` — no setting, no host message, no storage, gone when the view is
-  disposed (G7).
+  ONLY THE OPEN PAGE IS BUILT. A hidden page that stayed mounted would be a
+  second place a value could persist across a page switch; a page rebuilt
+  from the state every time it is shown cannot.
 
-  Only the active tab's panel is MOUNTED. A hidden panel that kept a component
-  alive would be a second place a value could persist across a tab switch; a
-  panel that is rebuilt from the source every time it is shown cannot.
+  THE SIDEBAR IS THE ONE WEBVIEW THAT CARRIES CONTROLS, and that is the
+  amendment's own exception rather than a hole in it: the deck, the session
+  interior, the drawer and the Statistics window stay content only (plus the
+  Stats tab strip, ruled back in), and everything that was a chip or a bar on
+  one of them is a row here.
 -->
 <script lang="ts">
-  import Menu from './Menu.svelte';
-  import Tweaks from './Tweaks.svelte';
-  import type { SidebarMenuEntry } from '../../src/sidebar/menu.js';
-  import { TESTID } from '../canvas-contract.js';
-  import type { TweaksSource } from './tweaks-source.js';
+  import type { ControlSection } from '../../src/view/controls.js';
+  import { CONTROL_SECTIONS, DEFAULT_SECTION } from '../../src/view/controls.js';
+  import { sidebarPage } from './model.js';
+  import type { SidebarSource } from './source.js';
+  import Rows from './Rows.svelte';
 
-  let {
-    entries,
-    onrun,
-    source,
-  }: {
-    entries: readonly SidebarMenuEntry[];
-    onrun: (command: string) => void;
-    source: TweaksSource;
-  } = $props();
+  /*
+   * A SOURCE, not a state prop, and the reason is mechanical: `mount()`
+   * takes props once, and this surface has to answer a message that arrives
+   * at any time. `App.svelte` has the same shape against `store.ts`.
+   *
+   * It is also why nothing here is called `state`: a local binding of that
+   * name makes the compiler read `$state` as an auto-subscription to a store
+   * called `state` rather than as the rune, and the mount dies with
+   * `store.subscribe is not a function`. Measured, not guessed.
+   */
+  let { source }: { source: SidebarSource } = $props();
 
-  type TabId = 'menu' | 'tweaks';
+  // `$state.raw`, for the reason `App.svelte` gives: the value is replaced
+  // whole and a deep proxy over it would buy nothing.
+  let model = $state.raw(source.get());
 
-  /** The tabs, in the order they render. The menu is the front door. */
-  const TABS: readonly { id: TabId; label: string }[] = [
-    { id: 'menu', label: 'Menu' },
-    { id: 'tweaks', label: 'Tweaks' },
-  ];
+  $effect(() => {
+    model = source.get();
+    return source.subscribe(() => {
+      model = source.get();
+    });
+  });
 
-  let active = $state.raw<TabId>('menu');
+  let page = $state.raw<ControlSection>(DEFAULT_SECTION);
+
+  /**
+   * The expanded groups.
+   *
+   * A `Set` held in a `$state.raw` box and REPLACED rather than mutated:
+   * Svelte 5 tracks the assignment, and a mutated set would move without
+   * anything re-reading it. Empty at first, which is the mock's "each
+   * collapsed by default, showing its current value as a grey suffix".
+   */
+  let open = $state.raw<ReadonlySet<string>>(new Set());
+
+  let rows = $derived(sidebarPage(page, model));
+
+  const toggle = (groupId: string): void => {
+    const next = new Set(open);
+    if (!next.delete(groupId)) next.add(groupId);
+    open = next;
+  };
+
+  /**
+   * Run a command and, when it came from inside a group, shut the group.
+   *
+   * The mock's "collapsing back after a choice": a person opens Sort, picks
+   * Recent, and the group folds up again showing `Recent`. Without it the
+   * sidebar grows every time it is used and the strip's whole reason —
+   * a short page — is lost by the third click.
+   *
+   * `inGroup` is `undefined` for a row that sits directly on a page (Menu's
+   * seven, Reset view), and nothing collapses for those.
+   */
+  const run = (command: string, inGroup: string | undefined): void => {
+    source.run(command);
+    if (inGroup === undefined) return;
+    const next = new Set(open);
+    next.delete(inGroup);
+    open = next;
+  };
 </script>
 
-<div class="sidebar">
-  <div
-    class="tabs"
-    role="tablist"
-    data-testid={TESTID.sidebarTablist}
-    aria-label="Sidebar sections"
-  >
-    {#each TABS as tab (tab.id)}
+<div class="sidebar" data-testid="sidebar">
+  <nav class="strip" data-testid="sidebar-strip" role="tablist" aria-label="Agent Deck sections">
+    {#each CONTROL_SECTIONS as section (section.id)}
       <button
         type="button"
         role="tab"
         class="tab"
-        id={`sidebar-tab-${tab.id}`}
-        data-testid={TESTID.sidebarTab}
-        data-tab={tab.id}
-        data-active={String(active === tab.id)}
-        aria-selected={active === tab.id}
-        aria-controls={`sidebar-panel-${tab.id}`}
-        tabindex={active === tab.id ? 0 : -1}
-        onclick={() => (active = tab.id)}>{tab.label}</button
+        data-testid="sidebar-tab"
+        data-tab={section.id}
+        data-active={String(page === section.id)}
+        aria-selected={page === section.id}
+        aria-controls="sidebar-page"
+        tabindex={page === section.id ? 0 : -1}
+        onclick={() => (page = section.id)}>{section.label}</button
       >
     {/each}
-  </div>
+  </nav>
 
-  {#if active === 'menu'}
-    <div
-      role="tabpanel"
-      id="sidebar-panel-menu"
-      aria-labelledby="sidebar-tab-menu"
-      data-testid={TESTID.sidebarPanel}
-      data-tab="menu"
-    >
-      <Menu {entries} {onrun} />
-    </div>
-  {:else}
-    <div
-      role="tabpanel"
-      id="sidebar-panel-tweaks"
-      aria-labelledby="sidebar-tab-tweaks"
-      data-testid={TESTID.sidebarPanel}
-      data-tab="tweaks"
-    >
-      <Tweaks {source} />
-    </div>
-  {/if}
+  <div
+    id="sidebar-page"
+    role="tabpanel"
+    class="page"
+    data-testid="sidebar-page"
+    data-section={page}
+  >
+    <Rows {rows} {open} onrun={run} ontoggle={toggle} />
+  </div>
 </div>
 
 <style>
@@ -98,12 +123,14 @@
     color: var(--vscode-foreground);
     font-family: var(--vscode-font-family, sans-serif);
     font-size: var(--vscode-font-size, 13px);
+    padding-bottom: 6px;
   }
 
-  .tabs {
+  .strip {
     display: flex;
     gap: 2px;
     padding: 4px 8px 0;
+    margin-bottom: 4px;
     border-bottom: 1px solid var(--vscode-panel-border, transparent);
   }
 
@@ -112,7 +139,7 @@
     color: inherit;
     background: none;
     border: none;
-    border-bottom: 1px solid transparent;
+    border-bottom: 2px solid transparent;
     padding: 4px 8px;
     cursor: pointer;
     opacity: 0.75;

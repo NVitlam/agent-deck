@@ -105,7 +105,7 @@
         "type": "statsSnapshot",
         "records": [
           {
-            "statsSchemaVersion": 2,
+            "statsSchemaVersion": 3,
             "sessionId": "synthetic-11-user-priced",
             "engine": "cc",
             "projectSlug": "synthetic-stats",
@@ -137,11 +137,13 @@
             ],
             "loops": [],
             "churn": [],
+            "skills": [],
             "contextChurn": [
               {
                 "agentId": "root",
                 "ordinal": 1,
-                "delta": 1000000
+                "delta": 1000000,
+                "gapBeforeMs": null
               }
             ],
             "compactions": [],

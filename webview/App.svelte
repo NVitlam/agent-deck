@@ -9,8 +9,10 @@
   import SessionCanvas from './SessionCanvas.svelte';
   import Inspector from './Inspector.svelte';
   import StatsView from './stats/StatsView.svelte';
+  import InsightsSurface from './insights/InsightsSurface.svelte';
+  import AboutSurface from './AboutSurface.svelte';
   import { displayLiveness, formatTokens, formatWindowTokens } from './format.js';
-  import { LIVENESS_FILTERS, TESTID } from './canvas-contract.js';
+  import { TESTID } from './canvas-contract.js';
   import { deckEngine } from './layout.js';
 
   let { store }: { store: Store } = $props();
@@ -191,125 +193,63 @@
     </div>
   {/if}
 
-  <!-- The list/canvas switch is an IN-PANEL control, not a VS Code command and
-       not a configuration key. That is deliberate and is what keeps this phase
-       free of a host-manifest diff: a setting would be a `package.json`
-       contribution (spec C7.2). The canvas is the default immediately. -->
-  <div class="chrome">
-    {#if view.viewMode === 'canvas'}
-      <!-- The dock, spec C7.8: "The session dock is a <nav>". Phase 4.5 built
-           the altitudes and shipped no visible way between them — Escape
-           walked up and nothing said so. A keystroke nobody is told about is
-           not navigation. -->
-      <nav class="dock" data-testid={TESTID.dock} aria-label="Altitude" style="margin-right:auto">
-        <button
-          type="button"
-          class="crumb"
-          data-testid={TESTID.crumbDeck}
-          aria-current={view.altitude === 'deck' ? 'page' : undefined}
-          disabled={view.altitude === 'deck'}
-          onclick={() => {
-            // Walk all the way out, whatever altitude we are at, so one click
-            // always means "back to the deck" rather than "up one".
-            while (store.getView().altitude !== 'deck') store.escape();
-          }}>Deck</button
-        >
-        {#if view.altitude !== 'deck' && view.selected !== undefined}
-          <span class="sep" aria-hidden="true">▸</span>
-          <span class="crumb here" data-testid={TESTID.crumbHere}
-            >{view.selected.root.label !== ''
-              ? view.selected.root.label
-              : view.selected.sessionId}</span
-          >
-        {/if}
-      </nav>
+  <!--
+    THE CHROME BAR WAS HERE UNTIL v0.9.0 DoD 9.14, and so was the Insights tab.
 
-      {#if view.altitude === 'deck'}
-        <!-- Liveness filter. View state only: `view.sessions` remains the
-             host's full account and the count chip on the deck says "n of m",
-             so a filter can never be mistaken for "this is all there is". -->
-        <div class="filters" role="group" aria-label="Filter sessions">
-          {#each LIVENESS_FILTERS as filter (filter)}
-            <button
-              type="button"
-              class="chip"
-              data-testid={TESTID.filterChip}
-              data-filter={filter}
-              data-active={String(view.livenessFilter === filter)}
-              aria-pressed={view.livenessFilter === filter}
-              onclick={() => store.setLivenessFilter(filter)}>{filter}</button
-            >
-          {/each}
-        </div>
+    Spec `Amendment 2026-09-20 — Clean windows`: every webview surface is
+    content only. What stood here was the altitude dock, the four liveness
+    filter chips, the "n of m" count, the live/idle/ended/refused legend, the
+    inspector toggle, and the Stats, About, Insights and Canvas/List buttons —
+    eleven controls and two read-outs, in a bar above the field.
 
-        <!-- Beside the filter, not on a row of its own. Says what is showing
-             AND out of how many, so a filter can never read as "these are all
-             the sessions there are". -->
-        <span
-          class="count"
-          data-testid={TESTID.countChip}
-          data-shown={String(view.filteredSessions.length)}
-          data-total={String(view.sessions.length)}
-          >{view.filteredSessions.length === view.sessions.length
-            ? `${view.sessions.length} sessions`
-            : `${view.filteredSessions.length} of ${view.sessions.length}`}</span
-        >
-
-        <!-- The membrane-colour key. The grammar is only legible if something
-             states it; C7.3 defines it and nothing showed it. -->
-        <span class="legend" data-testid={TESTID.legend}>
-          <span class="key" data-liveness="live">live</span>
-          <span class="key" data-liveness="idle">idle</span>
-          <span class="key" data-liveness="ended">ended</span>
-          <span class="key" data-liveness="unsupported">refused</span>
-        </span>
-      {/if}
-
-      {#if view.altitude !== 'deck' && view.selectedNodeId !== undefined}
-        <!-- Reopening. The close button existed; nothing reopened it, so a
-             closed inspector could only come back by re-picking the node. -->
-        <button
-          type="button"
-          class="chip"
-          data-testid={TESTID.inspectorToggle}
-          aria-pressed={view.inspectorOpen}
-          onclick={() => store.setInspectorOpen(!view.inspectorOpen)}
-          >{view.inspectorOpen ? 'Hide details' : 'Show details'}</button
-        >
-      {/if}
-    {/if}
-
-    <!-- THE THIRD MODE (v0.7.0 Phase 4, spec §G): Stats. Its own control
-         beside the canvas/list toggle rather than a third state of it, so the
-         toggle's two-way contract (canvas <-> list) is untouched and "Stats"
-         reads as a place to go rather than as the next notch. -->
-    <button
-      type="button"
-      class="toggle"
-      data-testid={TESTID.statsToggle}
-      aria-pressed={view.viewMode === 'stats'}
-      onclick={() => store.toggleStats()}
-    >
-      Stats
-    </button>
-    {#if view.viewMode !== 'stats'}
-      <button
-        type="button"
-        class="toggle"
-        data-testid={TESTID.viewToggle}
-        data-view-mode={view.viewMode}
-        aria-pressed={view.viewMode === 'canvas'}
-        onclick={() => store.toggleViewMode()}
-      >
-        {view.viewMode === 'canvas' ? 'Canvas' : 'List'}
-      </button>
-    {/if}
-  </div>
+    Every one of them is now an entry in the editor's own view-title menu and
+    in the sidebar tree (`src/view/controls.ts` is the table). The legend is
+    gone with no replacement anywhere, by the amendment's own clause: liveness
+    is shown ON each item by colour and contrast, so a key beside the field is
+    a second account of a grammar the field already states.
+  -->
 
   {#if view.viewMode === 'stats'}
     <!-- The Layer 1 facts. Full stats live in the panel (locked open
          question); this is the whole field while the mode is on. -->
     <StatsView {store} {view} />
+  {:else if view.viewMode === 'insights'}
+    <!-- v0.9.0 DoD 9.29/9.30 — the Insights SURFACE, in this one panel (spec
+         `Amendment 2026-09-21 — One window`). Its facts are the STORED
+         history's; its state is whether a provider is registered, and that
+         is the host's `providerState`, never a guess made here.
+
+         EVERY PROP IS PASSED HERE AND THIS IS THE ONLY MOUNT. That sentence
+         has been paid for six times in this release line — a prop the
+         component honours and the parent never passes — so
+         `surfaces.test.ts` drives it through the mounted app. -->
+    <InsightsSurface
+      records={view.statsStored}
+      loaded={view.statsStoreLoaded}
+      enabled={view.statsStoreEnabled}
+      provider={view.insightsProvider}
+      ticks={view.insightsTicks}
+      exampleCount={view.insightsExampleCount}
+      getHost={view.aboutPage?.get.host ?? null}
+      idleThresholdMs={view.livenessThresholdMs}
+      onget={() => store.getInsights()}
+      onrawoutput={() => store.showInsightsRawOutput()}
+      onselect={(runId) => store.selectInsightsRun(runId)}
+      ontick={(runId) => store.toggleInsightsTick(runId)}
+      onexport={(target) => store.exportInsights(target)}
+      onexportticked={() => store.exportTickedInsights()}
+      oninvestigate={() => store.investigateInsights()}
+    />
+  {:else if view.viewMode === 'about'}
+    <!-- v0.9.0 DoD 9.32 — About, in this one panel rather than a panel of
+         its own. Same rule as above: every prop is passed here, and the
+         mounted-app test is what can see one go missing. -->
+    <AboutSurface
+      provider={view.insightsProvider}
+      page={view.aboutPage}
+      onlink={(index) => store.openAboutLink(index)}
+      onget={() => store.getInsights()}
+    />
   {:else if view.viewMode === 'list'}
     <!-- Phase 3's renderer, kept for one release behind the toggle (C7.2).
          Both surfaces are projections of the same store, so the state grammar
@@ -340,20 +280,21 @@
          be able to reach, and rendering the deck is the honest answer if it
          ever does.
 
-         THIS BRANCH IS WHY THE ENGINE FILTER IS STORE STATE. `<Deck>` is
-         mounted only here, so it is DESTROYED on entering a session and
+         THIS BRANCH IS WHY EVERY DECK CONTROL VALUE IS STORE STATE. `<Deck>`
+         is mounted only here, so it is DESTROYED on entering a session and
          rebuilt on returning. Anything the component held is gone; anything
-         the store holds survives. The filter used to be the former and reset
-         to `all` on every session visit, beside a liveness filter that did
-         not. Both are now passed in and reported back.
+         the store holds survives.
 
-         `defaultOrdering` IS THE OPPOSITE CASE and is passed in without being
-         reported back (DoD 7.6). It is not the deck's sort — it is what the
-         deck's sort STARTS at, read once when this component is built, so the
-         very re-mount that resets the control bar is the moment it applies.
-         The sort itself stays `Deck.svelte`'s own, by a decision argued in
-         that file and not reopened here; the store carries the setting, and
-         `settings.json` carries the value. -->
+         The engine filter was the first to be moved for that reason, in
+         v0.8.0. v0.9.0 DoD 9.14 moved the other two — the layout and the sort
+         were `Deck.svelte`'s own, re-chosen from a control bar in front of
+         the user, and there is no control bar now. They come from the HOST
+         (spec `Amendment 2026-09-20`), so they survive the re-mount and the
+         sidebar's tick and the field agree by construction.
+
+         `agentDeck.defaultOrdering` still exists and is still a setting: it
+         is what `deckSort` is SEEDED from at activation, in `extension.ts`,
+         which is the one place a setting becomes a control value. -->
     <main class="main" data-testid="main">
       <Deck
         sessions={view.filteredSessions}
@@ -364,12 +305,11 @@
         deckView={view.deckView}
         {reducedMotion}
         engineFilter={view.engineFilter}
-        onenginefilter={(filter) => store.setEngineFilter(filter)}
-        defaultOrdering={view.defaultOrdering}
+        layoutMode={view.deckLayout}
+        sortMode={view.deckSort}
         onenter={(id) => store.enterSession(id)}
         onpan={(dx, dy) => store.panDeck(dx, dy)}
         onzoom={(notches, x, y) => store.zoomDeck(notches, x, y)}
-        onreset={() => store.resetDeckView()}
         onfit={(content, size) => store.fitDeck(content, size)}
       />
     </main>
@@ -448,6 +388,7 @@
           selectedNodeId={view.selectedNodeId}
           canvasView={view.canvasView}
           fitEpoch={view.canvasFitEpoch}
+          resetEpoch={view.canvasResetEpoch}
           {drawerRect}
           onreportgeometry={(geometry) => store.reportCanvasGeometry(geometry)}
           {reducedMotion}
@@ -467,9 +408,24 @@
          `sessionId`, `engine` and `spawnEdges` are passed HERE for the first
          time. The props existed and had no caller, so the header's session id
          and engine glyph, and every call row's "→ child" link, were reachable
-         only from a test. `breadcrumb` is still unwired: the focus path lives
-         in `SessionCanvas.svelte` as component state, so App cannot see it —
-         the same reason §8.6's "re-root to parent" Escape step is unbuilt. -->
+         only from a test.
+
+         AND IT HAPPENED AGAIN IN v0.9.0 DoD 9.14, one verifier round later,
+         to `statusFilter`, `callOrder` and `toolFilter`. Ruling 5 moved the
+         drawer's three filters to View ▸ Inspector; the commands were
+         contributed and registered, the host held the values, the panel was
+         sent them, the store stored them and the sidebar TICKED the active
+         one — and this mount did not pass them, so all seven commands were
+         dead. The same shape as the About button this whole delta exists to
+         fix. `inspector.test.ts`'s "through the mounted app" block is the
+         guard: it drives them the way production does, which is the only
+         shape that can see a missing attribute.
+
+         `breadcrumb` is still unwired, and that is a decision rather than
+         an oversight: the focus path lives in `SessionCanvas.svelte` as
+         component state, so App cannot see it, and ruling 2 removed the
+         clickable crumbs rather than adding a second place to read a path.
+         `inspector.test.ts` tests it as a component prop and says so. -->
     {#if view.inspectorOpen && view.selectedNode !== undefined}
       <Inspector
         node={inspected}
@@ -480,6 +436,9 @@
         ondrawertoggle={() => store.toggleDrawerExpanded()}
         detailActionId={view.detailActionId}
         ondetail={(id) => store.setDetailAction(id)}
+        statusFilter={view.inspectorStatus}
+        callOrder={view.inspectorOrder}
+        toolFilter={view.inspectorTool}
         expanded={inspectedExpanded}
         ontoggle={() => {
           if (inspected !== undefined) store.toggleNode(inspected.id);
@@ -564,130 +523,12 @@
     opacity: 0.85;
   }
 
-  .dock {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .crumb {
-    font: inherit;
-    font-size: 0.9em;
-    color: var(--vscode-textLink-foreground, inherit);
-    background: transparent;
-    border: none;
-    padding: 0 2px;
-    cursor: pointer;
-  }
-
-  .crumb:disabled {
-    color: var(--vscode-descriptionForeground, inherit);
-    cursor: default;
-  }
-
-  .crumb.here {
-    color: var(--vscode-foreground);
-    max-width: 18em;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .sep {
-    opacity: 0.6;
-  }
-
-  .filters {
-    display: flex;
-    gap: 4px;
-  }
-
-  .count {
-    font-size: 0.85em;
-    opacity: 0.8;
-    white-space: nowrap;
-  }
-
-  .legend {
-    display: flex;
-    gap: 10px;
-    font-size: 0.85em;
-    opacity: 0.85;
-  }
-
-  .key::before {
-    content: '';
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    margin-right: 4px;
-    border-radius: 50%;
-    background: currentColor;
-  }
-
-  .key[data-liveness='live'] {
-    color: var(--vscode-charts-green, currentColor);
-  }
-
-  .key[data-liveness='idle'] {
-    color: var(--vscode-charts-yellow, currentColor);
-  }
-
-  .key[data-liveness='ended'] {
-    color: var(--vscode-descriptionForeground, currentColor);
-  }
-
-  .key[data-liveness='unsupported'] {
-    color: var(--vscode-errorForeground, currentColor);
-  }
-
-  .chip {
-    font: inherit;
-    font-size: 0.85em;
-    color: var(--vscode-foreground);
-    background: transparent;
-    border: 1px solid var(--vscode-panel-border, transparent);
-    border-radius: 9px;
-    padding: 0 8px;
-    cursor: pointer;
-  }
-
-  .chip[data-active='true'],
-  .chip[aria-pressed='true'] {
-    background: var(--vscode-badge-background, transparent);
-    color: var(--vscode-badge-foreground, inherit);
-  }
-
-  .crumb:focus-visible,
-  .chip:focus-visible {
-    outline: 1px solid var(--vscode-focusBorder, currentColor);
-    outline-offset: 1px;
-  }
-
-  .chrome {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    padding: 2px 6px;
-    border-bottom: 1px solid var(--vscode-panel-border, transparent);
-  }
-
-  .toggle {
-    font: inherit;
-    color: var(--vscode-foreground);
-    background: var(--vscode-badge-background, transparent);
-    border: 1px solid var(--vscode-panel-border, transparent);
-    border-radius: 3px;
-    padding: 1px 8px;
-    cursor: pointer;
-  }
-
-  .toggle:focus-visible {
-    outline: 1px solid var(--vscode-focusBorder, currentColor);
-    outline-offset: 1px;
-  }
+  /*
+   * The chrome bar's rules were here until v0.9.0 DoD 9.14: dock, crumb, sep,
+   * filters, count, legend, key, chip, chrome and toggle. Every element they
+   * styled is gone, and an unused selector is a rule the next reader has to
+   * prove nothing uses.
+   */
 
   .notice {
     user-select: text;

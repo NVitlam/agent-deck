@@ -108,6 +108,20 @@ export interface HeaderCss {
   labelFontPx: number;
   /** `.f-label { letter-spacing }`, in em. */
   labelLetterSpacingEm: number;
+  /**
+   * `.fields { flex-wrap }` is `wrap` — v0.9.0 DoD 9.9.
+   *
+   * `false` is the CSS initial value (`nowrap`) and is the state every
+   * golden before 0.9.0 was taken in.
+   */
+  wrap: boolean;
+  /**
+   * `.fields { row-gap }`, in px. Between wrapped rows.
+   *
+   * Falls back to {@link HeaderCss.gapPx} when the rule declares only
+   * `gap`, which is what the shorthand means.
+   */
+  rowGapPx: number;
 }
 
 /** One field of the header group, as the component renders it. */
@@ -148,6 +162,15 @@ export interface PlacedField {
    * declares no `overflow`, so this is visible ink, not a clipped remainder.
    */
   overflows: boolean;
+  /**
+   * Which wrapped row the box sits on, from 0 — v0.9.0 DoD 9.9.
+   *
+   * Always 0 when `.fields` does not wrap, so a golden taken before 0.9.0
+   * reads the same.
+   */
+  row: number;
+  /** The box's top edge, from the group's top. Rows times row height. */
+  y: number;
   /** The box's right edge is past the group's visible width. */
   clipped: boolean;
   /** The box begins at or past the group's visible width. */
@@ -181,6 +204,8 @@ export interface HeaderLayout {
   clipped: string[];
   /** Fields that begin past it, so no part of them is drawn. */
   outside: string[];
+  /** How many rows the fields occupy. 1 unless `.fields` wrapped. */
+  rows: number;
 }
 
 /** Two decimal places, so a golden carries no float tail. */
@@ -258,13 +283,24 @@ export function parseHeaderCss(source: string): HeaderCss {
     throw new Error('Inspector.svelte: .f-label declares no letter-spacing');
   }
 
+  // v0.9.0 DoD 9.9. Both are OPTIONAL to parse and default to the CSS
+  // initial values, so this function still reads a stylesheet that declares
+  // neither — which is the shape every golden before 0.9.0 was taken in.
+  const wrap = /(?:^|[\s;])flex-wrap:\s*wrap\b/.test(fieldsBody);
+  const rowGap = /(?:^|[\s;])row-gap:\s*([0-9.]+)px/.exec(fieldsBody);
+  const gapPx = pxValue(fieldsBody, 'gap', '.fields');
+
   return {
-    gapPx: pxValue(fieldsBody, 'gap', '.fields'),
+    gapPx,
     shrink: shrinkFactor(fieldBody),
     minWidthPx,
     valueFontPx: pxValue(valueBody, 'font-size', '.f-value'),
     labelFontPx: pxValue(labelBody, 'font-size', '.f-label'),
     labelLetterSpacingEm: Number(letterSpacing[1]),
+    wrap,
+    // Absent means the `gap` shorthand sets both, which is what the
+    // shorthand means — not zero.
+    rowGapPx: rowGap === null ? gapPx : Number(rowGap[1]),
   };
 }
 
@@ -366,16 +402,65 @@ export function layoutHeader(input: HeaderInput): HeaderLayout {
   const bases = contents.map((content, i) => Math.max(content, mins[i] ?? 0));
 
   const available = Math.max(0, input.panelPx - input.reservedPx);
-  const widths = resolveWidths(bases, mins, gapTotal, available, css.shrink);
-  const used = widths.reduce((sum, w) => sum + w, 0) + gapTotal;
-  const visible = Math.min(used, available);
 
-  const xs: number[] = [];
-  let cursor = 0;
-  for (let i = 0; i < widths.length; i += 1) {
-    xs.push(cursor);
-    cursor += (widths[i] ?? 0) + css.gapPx;
+  /*
+   * v0.9.0 DoD 9.9 — WHICH ROW EACH FIELD LANDS ON.
+   *
+   * A wrapped flex line is filled greedily: a field goes on the current row
+   * while its BASE width still fits, and starts a new one when it does not.
+   * A field wider than the whole row sits alone on its own row, which is the
+   * browser’s behaviour and is why the loop always places at least one.
+   *
+   * Shrink is then resolved PER ROW, not once for the whole group: after a
+   * break each row is its own flex line with its own free space. Resolving
+   * once and then cutting the result into rows would report widths no
+   * browser produces.
+   */
+  const rowOf: number[] = [];
+  if (css.wrap) {
+    let row = 0;
+    let rowWidth = 0;
+    for (let i = 0; i < bases.length; i += 1) {
+      const base = bases[i] ?? 0;
+      const withGap = rowWidth === 0 ? base : rowWidth + css.gapPx + base;
+      if (rowWidth > 0 && withGap > available + EDGE_EPSILON_PX) {
+        row += 1;
+        rowWidth = base;
+      } else {
+        rowWidth = withGap;
+      }
+      rowOf.push(row);
+    }
+  } else {
+    for (let i = 0; i < bases.length; i += 1) rowOf.push(0);
   }
+  const rows = rowOf.length === 0 ? 1 : (rowOf[rowOf.length - 1] ?? 0) + 1;
+
+  const widths: number[] = new Array<number>(bases.length).fill(0);
+  const xs: number[] = new Array<number>(bases.length).fill(0);
+  let used = 0;
+  for (let row = 0; row < rows; row += 1) {
+    const idx = rowOf.map((r, i) => (r === row ? i : -1)).filter((i) => i >= 0);
+    const rowGapTotal = css.gapPx * Math.max(0, idx.length - 1);
+    const rowWidths = resolveWidths(
+      idx.map((i) => bases[i] ?? 0),
+      idx.map((i) => mins[i] ?? 0),
+      rowGapTotal,
+      available,
+      css.shrink,
+    );
+    let cursor = 0;
+    idx.forEach((i, k) => {
+      widths[i] = rowWidths[k] ?? 0;
+      xs[i] = cursor;
+      cursor += (rowWidths[k] ?? 0) + css.gapPx;
+    });
+    const rowUsed = rowWidths.reduce((sum, w) => sum + w, 0) + rowGapTotal;
+    // The widest row is what the group occupies horizontally.
+    used = Math.max(used, rowUsed);
+  }
+  const visible = Math.min(used, available);
+  const rowHeightPx = css.rowGapPx;
 
   const fields: PlacedField[] = input.fields.map((text, i) => {
     const x = xs[i] ?? 0;
@@ -387,6 +472,12 @@ export function layoutHeader(input: HeaderInput): HeaderLayout {
       width: round2(width),
       contentPx: round2(content),
       overflows: content > width + EDGE_EPSILON_PX,
+      row: rowOf[i] ?? 0,
+      // Rows are stacked; the exact row height is a font metric this model
+      // cannot see (limit 1 in the header), so `y` counts ROW GAPS and says
+      // so. What it is for is ordering, not pixels.
+      y: round2((rowOf[i] ?? 0) * rowHeightPx),
+    
       clipped: x < visible - EDGE_EPSILON_PX && x + width > visible + EDGE_EPSILON_PX,
       outside: x >= visible - EDGE_EPSILON_PX,
     };
@@ -396,6 +487,10 @@ export function layoutHeader(input: HeaderInput): HeaderLayout {
   for (let i = 0; i < input.fields.length; i += 1) {
     const paintedRight = (xs[i] ?? 0) + (contents[i] ?? 0);
     for (let j = i + 1; j < input.fields.length; j += 1) {
+      // v0.9.0 DoD 9.9 — only within one row. Two fields on different rows
+      // cannot paint over each other however far the first one reaches,
+      // and comparing them would report an overlap the wrap exists to stop.
+      if ((rowOf[i] ?? 0) !== (rowOf[j] ?? 0)) continue;
       const left = xs[j] ?? 0;
       if (paintedRight > left + EDGE_EPSILON_PX) {
         overlaps.push({
@@ -416,5 +511,6 @@ export function layoutHeader(input: HeaderInput): HeaderLayout {
     overlaps,
     clipped: fields.filter((f) => f.clipped).map((f) => f.field),
     outside: fields.filter((f) => f.outside).map((f) => f.field),
+    rows,
   };
 }

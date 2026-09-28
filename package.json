@@ -1,9 +1,13 @@
 {
   "name": "agent-deck",
-  "displayName": "Agent Deck — Watch Your Agents Work.",
-  "version": "0.8.1",
+  "displayName": "Agent Deck \u2014 Watch Your Agents Work.",
+  "version": "0.9.0",
   "publisher": "nvitlam",
-  "description": "Live observability for coding-agent swarms — Claude Code, OpenCode and Codex, side by side in VS Code. Read-only, zero egress.",
+  "description": "Live observability for coding-agent swarms \u2014 Claude Code, OpenCode and Codex, side by side in VS Code. Read-only, zero egress.",
+  "sponsor": {
+    "url": "https://github.com/sponsors/NVitlam"
+  },
+  "homepage": "https://agent-deck.app/",
   "license": "MIT",
   "keywords": [
     "claude code",
@@ -51,6 +55,26 @@
         "category": "Agent Deck"
       },
       {
+        "command": "agentDeck.openInsights",
+        "title": "Open Insights",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.insights.pickAgent",
+        "title": "Insights: Pick Agent",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.insights.showPayload",
+        "title": "Insights: Show Payload",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.insights.clearHistory",
+        "title": "Insights: Clear History",
+        "category": "Agent Deck"
+      },
+      {
         "command": "agentDeck.showDiagnostics",
         "title": "Show Diagnostics",
         "category": "Agent Deck"
@@ -64,6 +88,635 @@
         "command": "agentDeck.stats.clearHistory",
         "title": "Clear Stats History",
         "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.about",
+        "title": "About",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.view.canvas",
+        "title": "Canvas",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.view.list",
+        "title": "List",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.filter.sessions.all",
+        "title": "All",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.filter.sessions.live",
+        "title": "Live",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.filter.sessions.idle",
+        "title": "Idle",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.filter.sessions.ended",
+        "title": "Ended",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.filter.engines.all",
+        "title": "All",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.filter.engines.cc",
+        "title": "Claude Code",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.filter.engines.oc",
+        "title": "OpenCode",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.filter.engines.cx",
+        "title": "Codex",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.layout.list",
+        "title": "List",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.layout.grid",
+        "title": "Grid",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.layout.lanes",
+        "title": "Lanes",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.sort.live",
+        "title": "Live first",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.sort.recent",
+        "title": "Recent",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.sort.engine",
+        "title": "Engine",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.inspector.status.all",
+        "title": "All",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.inspector.status.running",
+        "title": "Running",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.inspector.status.done",
+        "title": "Completed",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.inspector.status.error",
+        "title": "Failed",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.inspector.order.oldest",
+        "title": "Oldest first",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.inspector.order.newest",
+        "title": "Newest first",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.inspector.tool",
+        "title": "Tool",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.resetView",
+        "title": "Reset view",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.stats.tab.files",
+        "title": "Files",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.stats.tab.tools",
+        "title": "Tools",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.stats.tab.loops",
+        "title": "Loops & churn",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.stats.tab.tokens",
+        "title": "Tokens",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.stats.tab.trends",
+        "title": "Trends",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.tweak.followNewSessions",
+        "title": "Follow new sessions",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.tweak.openDrawerOnEnter",
+        "title": "Open the drawer on entering a session",
+        "category": "Agent Deck"
+      },
+      {
+        "command": "agentDeck.tweak.drawerExpandedByDefault",
+        "title": "Open the drawer expanded",
+        "category": "Agent Deck"
+      }
+    ],
+    "submenus": [
+      {
+        "id": "agentDeck.submenu.menu",
+        "label": "Menu"
+      },
+      {
+        "id": "agentDeck.submenu.view",
+        "label": "View"
+      },
+      {
+        "id": "agentDeck.submenu.tweaks",
+        "label": "Tweaks"
+      },
+      {
+        "id": "agentDeck.submenu.group.renderer",
+        "label": "Renderer"
+      },
+      {
+        "id": "agentDeck.submenu.group.sessions",
+        "label": "Sessions"
+      },
+      {
+        "id": "agentDeck.submenu.group.engines",
+        "label": "Engines"
+      },
+      {
+        "id": "agentDeck.submenu.group.layout",
+        "label": "Layout"
+      },
+      {
+        "id": "agentDeck.submenu.group.sort",
+        "label": "Sort"
+      },
+      {
+        "id": "agentDeck.submenu.group.inspector",
+        "label": "Inspector"
+      },
+      {
+        "id": "agentDeck.submenu.group.inspectorStatus",
+        "label": "Status"
+      },
+      {
+        "id": "agentDeck.submenu.group.inspectorOrder",
+        "label": "Order"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "submenu": "agentDeck.submenu.menu",
+          "group": "navigation@1",
+          "when": "view == agentDeck.sidebar"
+        },
+        {
+          "submenu": "agentDeck.submenu.view",
+          "group": "navigation@2",
+          "when": "view == agentDeck.sidebar"
+        },
+        {
+          "submenu": "agentDeck.submenu.tweaks",
+          "group": "navigation@3",
+          "when": "view == agentDeck.sidebar"
+        }
+      ],
+      "agentDeck.submenu.menu": [
+        {
+          "command": "agentDeck.open",
+          "group": "1_items@1"
+        },
+        {
+          "command": "agentDeck.openStats",
+          "group": "1_items@2"
+        },
+        {
+          "command": "agentDeck.openInsights",
+          "group": "1_items@3"
+        },
+        {
+          "command": "agentDeck.insights.pickAgent",
+          "group": "1_items@4",
+          "when": "agentDeck.insights.pickAgent"
+        },
+        {
+          "command": "agentDeck.insights.showPayload",
+          "group": "1_items@5",
+          "when": "agentDeck.insights.showPayload"
+        },
+        {
+          "command": "agentDeck.insights.clearHistory",
+          "group": "1_items@6",
+          "when": "agentDeck.insights.clearHistory"
+        },
+        {
+          "command": "agentDeck.showDiagnostics",
+          "group": "1_items@7"
+        },
+        {
+          "command": "agentDeck.openSettings",
+          "group": "1_items@8"
+        },
+        {
+          "command": "agentDeck.stats.clearHistory",
+          "group": "1_items@9"
+        },
+        {
+          "command": "agentDeck.about",
+          "group": "1_items@10"
+        }
+      ],
+      "agentDeck.submenu.view": [
+        {
+          "submenu": "agentDeck.submenu.group.renderer",
+          "group": "0_groups@8"
+        },
+        {
+          "submenu": "agentDeck.submenu.group.sessions",
+          "group": "0_groups@9"
+        },
+        {
+          "submenu": "agentDeck.submenu.group.engines",
+          "group": "0_groups@10"
+        },
+        {
+          "submenu": "agentDeck.submenu.group.layout",
+          "group": "0_groups@11"
+        },
+        {
+          "submenu": "agentDeck.submenu.group.sort",
+          "group": "0_groups@12"
+        },
+        {
+          "submenu": "agentDeck.submenu.group.inspector",
+          "group": "0_groups@13"
+        },
+        {
+          "command": "agentDeck.resetView",
+          "group": "1_items@14"
+        }
+      ],
+      "agentDeck.submenu.tweaks": [
+        {
+          "command": "agentDeck.tweak.followNewSessions",
+          "group": "1_items@15"
+        },
+        {
+          "command": "agentDeck.tweak.openDrawerOnEnter",
+          "group": "1_items@16"
+        },
+        {
+          "command": "agentDeck.tweak.drawerExpandedByDefault",
+          "group": "1_items@17"
+        }
+      ],
+      "agentDeck.submenu.group.renderer": [
+        {
+          "command": "agentDeck.view.canvas",
+          "group": "1_items@18"
+        },
+        {
+          "command": "agentDeck.view.list",
+          "group": "1_items@19"
+        }
+      ],
+      "agentDeck.submenu.group.sessions": [
+        {
+          "command": "agentDeck.filter.sessions.all",
+          "group": "1_items@20"
+        },
+        {
+          "command": "agentDeck.filter.sessions.live",
+          "group": "1_items@21"
+        },
+        {
+          "command": "agentDeck.filter.sessions.idle",
+          "group": "1_items@22"
+        },
+        {
+          "command": "agentDeck.filter.sessions.ended",
+          "group": "1_items@23"
+        }
+      ],
+      "agentDeck.submenu.group.engines": [
+        {
+          "command": "agentDeck.filter.engines.all",
+          "group": "1_items@24"
+        },
+        {
+          "command": "agentDeck.filter.engines.cc",
+          "group": "1_items@25"
+        },
+        {
+          "command": "agentDeck.filter.engines.oc",
+          "group": "1_items@26"
+        },
+        {
+          "command": "agentDeck.filter.engines.cx",
+          "group": "1_items@27"
+        }
+      ],
+      "agentDeck.submenu.group.layout": [
+        {
+          "command": "agentDeck.layout.list",
+          "group": "1_items@28"
+        },
+        {
+          "command": "agentDeck.layout.grid",
+          "group": "1_items@29"
+        },
+        {
+          "command": "agentDeck.layout.lanes",
+          "group": "1_items@30"
+        }
+      ],
+      "agentDeck.submenu.group.sort": [
+        {
+          "command": "agentDeck.sort.live",
+          "group": "1_items@31"
+        },
+        {
+          "command": "agentDeck.sort.recent",
+          "group": "1_items@32"
+        },
+        {
+          "command": "agentDeck.sort.engine",
+          "group": "1_items@33"
+        }
+      ],
+      "agentDeck.submenu.group.inspector": [
+        {
+          "submenu": "agentDeck.submenu.group.inspectorStatus",
+          "group": "0_groups@34"
+        },
+        {
+          "submenu": "agentDeck.submenu.group.inspectorOrder",
+          "group": "0_groups@35"
+        },
+        {
+          "command": "agentDeck.inspector.tool",
+          "group": "1_items@36"
+        }
+      ],
+      "agentDeck.submenu.group.inspectorStatus": [
+        {
+          "command": "agentDeck.inspector.status.all",
+          "group": "1_items@37"
+        },
+        {
+          "command": "agentDeck.inspector.status.running",
+          "group": "1_items@38"
+        },
+        {
+          "command": "agentDeck.inspector.status.done",
+          "group": "1_items@39"
+        },
+        {
+          "command": "agentDeck.inspector.status.error",
+          "group": "1_items@40"
+        }
+      ],
+      "agentDeck.submenu.group.inspectorOrder": [
+        {
+          "command": "agentDeck.inspector.order.oldest",
+          "group": "1_items@41"
+        },
+        {
+          "command": "agentDeck.inspector.order.newest",
+          "group": "1_items@42"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "agentDeck.view.canvas",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.view.list",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.filter.sessions.all",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.filter.sessions.live",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.filter.sessions.idle",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.filter.sessions.ended",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.filter.engines.all",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.filter.engines.cc",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.filter.engines.oc",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.filter.engines.cx",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.layout.list",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.layout.grid",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.layout.lanes",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.sort.live",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.sort.recent",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.sort.engine",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.inspector.status.all",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.inspector.status.running",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.inspector.status.done",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.inspector.status.error",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.inspector.order.oldest",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.inspector.order.newest",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.inspector.tool",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.resetView",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.stats.tab.files",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.stats.tab.tools",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.stats.tab.loops",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.stats.tab.tokens",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.stats.tab.trends",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.tweak.followNewSessions",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.tweak.openDrawerOnEnter",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.tweak.drawerExpandedByDefault",
+          "when": "false"
+        },
+        {
+          "command": "agentDeck.insights.pickAgent",
+          "when": "agentDeck.insights.pickAgent"
+        },
+        {
+          "command": "agentDeck.insights.showPayload",
+          "when": "agentDeck.insights.showPayload"
+        },
+        {
+          "command": "agentDeck.insights.clearHistory",
+          "when": "agentDeck.insights.clearHistory"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "agentDeck.filter.engines.all",
+        "key": "a",
+        "when": "activeWebviewPanelId == 'agentDeck.panel'"
+      },
+      {
+        "command": "agentDeck.filter.engines.cc",
+        "key": "c",
+        "when": "activeWebviewPanelId == 'agentDeck.panel'"
+      },
+      {
+        "command": "agentDeck.filter.engines.oc",
+        "key": "o",
+        "when": "activeWebviewPanelId == 'agentDeck.panel'"
+      },
+      {
+        "command": "agentDeck.filter.engines.cx",
+        "key": "x",
+        "when": "activeWebviewPanelId == 'agentDeck.panel'"
+      },
+      {
+        "command": "agentDeck.layout.list",
+        "key": "1",
+        "when": "activeWebviewPanelId == 'agentDeck.panel'"
+      },
+      {
+        "command": "agentDeck.layout.grid",
+        "key": "2",
+        "when": "activeWebviewPanelId == 'agentDeck.panel'"
+      },
+      {
+        "command": "agentDeck.layout.lanes",
+        "key": "3",
+        "when": "activeWebviewPanelId == 'agentDeck.panel'"
+      },
+      {
+        "command": "agentDeck.sort.live",
+        "key": "l",
+        "when": "activeWebviewPanelId == 'agentDeck.panel'"
+      },
+      {
+        "command": "agentDeck.sort.recent",
+        "key": "r",
+        "when": "activeWebviewPanelId == 'agentDeck.panel'"
+      },
+      {
+        "command": "agentDeck.sort.engine",
+        "key": "e",
+        "when": "activeWebviewPanelId == 'agentDeck.panel'"
       }
     ],
     "configuration": {

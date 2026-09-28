@@ -61,6 +61,9 @@
     ondrawertoggle,
     detailActionId,
     ondetail,
+    statusFilter = 'all',
+    callOrder = 'oldest',
+    toolFilter = 'all',
   }: {
     /** The node under inspection. `undefined` renders the empty state. */
     node?: TreeNode | undefined;
@@ -101,6 +104,17 @@
     detailActionId?: string | undefined;
     /** Open a row's detail pane, or pass `undefined` to shut it. */
     ondetail?: ((actionId: string | undefined) => void) | undefined;
+    /**
+     * View ▸ Inspector's three values — v0.9.0 DoD 9.14, ruling 5.
+     *
+     * Props with defaults, so this component can still be mounted on its own;
+     * the defaults are the store's own starting values rather than a second
+     * opinion about what they are.
+     */
+    statusFilter?: StatusFilter;
+    callOrder?: CallOrder;
+    /** A tool name, or `all`. Free text: tool names are the engine's. */
+    toolFilter?: string;
     /**
      * Whether a TOOL node's payload previews are expanded. Tool payloads
      * default to COLLAPSED, exactly as they do in the tree — an 8 KB preview
@@ -152,26 +166,24 @@
     return out;
   });
 
-  /* ----- the filter row (expanded state only, §8.6) ---------------------- */
+  /* ----- the filter values (props as of v0.9.0 DoD 9.14) ----------------- */
 
-  /**
-   * Local state, not the store's. See the header: nothing walks it, and §1.1's
-   * rule for the deck's controls — reset on close, no persistence (G7) — is
-   * the right one here too.
+  /*
+   * THESE THREE WERE COMPONENT STATE UNTIL v0.9.0 DoD 9.14.
+   *
+   * They were local because "nothing walks it" and because §1.1's rule for
+   * the deck's controls — reset on close, no persistence (G7) — read across.
+   * Spec `Amendment 2026-09-20` moves the controls that set them into View ▸
+   * Inspector, so the values are the HOST's and arrive as props. G7 is
+   * unchanged: nothing about them is persisted, and the host's copy dies with
+   * the window.
+   *
+   * `oldest` is still the default and is still the transcript's own order, so
+   * a call's sequence number and its position agree; `newest` still puts what
+   * just happened at the top.
    */
   type StatusFilter = 'all' | 'running' | 'done' | 'error';
-  let statusFilter = $state<StatusFilter>('all');
-  let toolFilter = $state<string>('all');
-
-  /**
-   * Which end of the run the list starts at — design amendment A9.5.
-   *
-   * `oldest` is the default and is the transcript's own order, so a call's
-   * sequence number and its position agree. `newest` puts what just happened at
-   * the top, which is what a person watching a live session is looking for.
-   */
   type CallOrder = 'oldest' | 'newest';
-  let callOrder = $state<CallOrder>('oldest');
 
   /**
    * FOLLOW THE LATEST CALL — A9.5, amended by v0.7.0 DoD 4.9b.
@@ -517,66 +529,30 @@
         <span class="path" data-testid="inspector-path" title={path}>{path}</span>
       {/if}
 
-      <button
-        class="head-button"
-        type="button"
-        data-testid={TESTID.drawerExpand}
-        aria-expanded={drawerExpanded}
-        onclick={() => ondrawertoggle?.()}>{drawerExpanded ? 'collapse ▾' : 'expand ▴'}</button
-      >
-      {#if onclose !== undefined}
-        <button
-          class="head-button"
-          type="button"
-          data-testid="inspector-close"
-          onclick={() => onclose?.()}>close</button
-        >
-      {/if}
+      <!--
+        The header's two buttons were here until v0.9.0 DoD 9.14: expand ▴ /
+        collapse ▾, and close.
+
+        Ruling 5 (2026-09-20): the drawer opens by SELECTING A CALL and closes
+        with Escape. Both behaviours are unchanged — `ondrawertoggle` and
+        `onclose` are still props and Escape still drives them from
+        `App.svelte` — what is gone is the pair of buttons on the drawer's own
+        chrome.
+      -->
     </header>
 
-    <!-- §8.6: "Filter row exists only in the expanded state." Not hidden with
-         CSS — absent, so a collapsed drawer cannot be filtered by a control
-         nobody can see. -->
-    {#if drawerExpanded && agent !== undefined}
-      <div class="filters" data-testid={TESTID.drawerFilters}>
-        {#each STATUS_CHIPS as chip (chip.value)}
-          <button
-            type="button"
-            class="chip"
-            data-testid={TESTID.drawerFilterChip}
-            data-filter={chip.value}
-            data-active={String(statusFilter === chip.value)}
-            aria-pressed={statusFilter === chip.value}
-            onclick={() => (statusFilter = chip.value)}
-            >{chip.label}<span class="chip-count">{statusCounts[chip.value]}</span></button
-          >
-        {/each}
-        <span class="spacer"></span>
-        <!-- A9.5: which end of the run the list starts at. Beside the tool
-             filter because it is the same kind of control — it changes what is
-             shown, not what is true. -->
-        <select
-          class="tool-select"
-          data-testid={TESTID.drawerOrderSelect}
-          aria-label="Call order"
-          bind:value={callOrder}
-        >
-          <option value="oldest">Oldest first</option>
-          <option value="newest">Newest first</option>
-        </select>
-        <select
-          class="tool-select"
-          data-testid={TESTID.drawerToolSelect}
-          aria-label="Filter by tool"
-          bind:value={toolFilter}
-        >
-          <option value="all">All tools</option>
-          {#each toolNames as name (name)}
-            <option value={name}>{name}</option>
-          {/each}
-        </select>
-      </div>
-    {/if}
+    <!--
+      THE FILTER ROW WAS HERE UNTIL v0.9.0 DoD 9.14: four status chips with
+      their counts, the call-order select and the tool select.
+
+      Ruling 5 sends all three to View ▸ Inspector ▸ Status / Order / Tool.
+      §8.6's "filter row exists only in the expanded state" has no subject any
+      more, and the rule it existed to serve — a collapsed drawer is not
+      filtered by a control nobody can see — is now simply true: no drawer is
+      filtered by a control on the drawer.
+
+      The VALUES still arrive, as props, so the list filters exactly as it did.
+    -->
 
     <div class="body" data-testid={TESTID.drawerBody} data-split={String(detail !== undefined)}>
       {#if agent !== undefined}
@@ -673,12 +649,12 @@
                 >
               </span>
               <span class="spacer"></span>
-              <button
-                class="head-button"
-                type="button"
-                data-testid="drawer-detail-close"
-                onclick={() => ondetail?.(undefined)}>close</button
-              >
+              <!--
+                The detail pane's close button was here until v0.9.0 DoD 9.14.
+                Ruling 5: a call row is a TOGGLE, so pressing the open row
+                again shuts its pane, and Escape shuts the drawer. A second
+                control for the same act is chrome.
+              -->
             </div>
             <!-- IMPORTED, never reimplemented. See the header comment. -->
             <PayloadPreview label="input" text={detail.inputPreview} expanded={false} />
@@ -841,6 +817,26 @@
     display: flex;
     align-items: baseline;
     gap: 14px;
+    /*
+     * v0.9.0 DoD 9.9 — THE HEADER WRAPS.
+     *
+     * DoD 7.9 stopped the fields shrinking below their own text, which is
+     * why they no longer paint over each other. What it could not do is
+     * make seven fields fit a panel too narrow for them: at the narrow end
+     * they simply ran off the visible width and `overflow: hidden` cut
+     * them. A row break is the remaining half.
+     *
+     * `row-gap` is declared SEPARATELY from the `gap` shorthand above so
+     * the two can differ — a wrapped row needs less vertical air than the
+     * horizontal rhythm — and so `inspector-header.ts` can read it as its
+     * own value rather than inferring one.
+     *
+     * `overflow: hidden` STAYS. Wrapping removes the need to cut at the
+     * narrow end; it does not make a cut impossible at a width narrower
+     * than a single field.
+     */
+    flex-wrap: wrap;
+    row-gap: 6px;
     min-width: 0;
     overflow: hidden;
   }
@@ -959,69 +955,15 @@
 
   /* §8.2: the focus ring is never amber — focus must not read as "running". */
   .head-button:focus-visible,
-  .chip:focus-visible,
-  .call:focus-visible,
-  .tool-select:focus-visible {
+  .call:focus-visible {
     outline: 2px solid var(--focus);
     outline-offset: 1px;
   }
 
-  /* ----- filter row (expanded only, §8.6) -------------------------------- */
-
-  .filters {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex: 0 0 auto;
-    padding: 4px 12px;
-    border-bottom: 1px solid var(--line-soft);
-  }
-
-  /* §8.5: 999 radius, count badge on `--line-soft`, active chip `--press`. */
-  .chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    font-family: var(--mono);
-    font-size: 10.5px;
-    color: var(--ink-2);
-    background: none;
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    padding: 2px 9px;
-    cursor: pointer;
-  }
-
-  .chip:hover {
-    border-color: var(--ink-3);
-    color: var(--ink);
-  }
-
-  .chip[data-active='true'] {
-    background: var(--press);
-    border-color: var(--ink-3);
-    color: var(--ink);
-  }
-
-  .chip-count {
-    font-weight: 600;
-    font-size: 10px;
-    min-width: 16px;
-    text-align: center;
-    border-radius: 999px;
-    background: var(--line-soft);
-  }
-
-  .tool-select {
-    font-family: var(--mono);
-    font-size: 10.5px;
-    color: var(--ink-2);
-    background: var(--bg);
-    border: 1px solid var(--line);
-    border-radius: 5px;
-    padding: 2px 6px;
-    max-width: 28ch;
-  }
+  /*
+   * The filter row's rules were here until v0.9.0 DoD 9.14: filters, chip,
+   * chip-count and tool-select. Every element they styled is gone (ruling 5).
+   */
 
   /* ----- body: the call list, and the detail pane beside it -------------- */
 

@@ -93,7 +93,7 @@
         "type": "statsSnapshot",
         "records": [
           {
-            "statsSchemaVersion": 2,
+            "statsSchemaVersion": 3,
             "sessionId": "synthetic-08-codex-window",
             "engine": "codex",
             "projectSlug": "synthetic-stats",
@@ -121,6 +121,7 @@
             ],
             "loops": [],
             "churn": [],
+            "skills": [],
             "contextChurn": [],
             "compactions": [],
             "stalls": [],
@@ -147,7 +148,8 @@
               "F4:codex",
               "F6:codex",
               "F7:codex",
-              "F9:codex"
+              "F9:codex",
+              "skills:codex"
             ]
           }
         ]

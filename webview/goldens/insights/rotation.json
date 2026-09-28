@@ -1,0 +1,40 @@
+{
+  "label": "Example, based on a real run",
+  "rotation": [
+    {
+      "count": 0,
+      "id": "compaction",
+      "title": "Compaction"
+    },
+    {
+      "count": 1,
+      "id": "cache-miss",
+      "title": "Cache miss"
+    },
+    {
+      "count": 2,
+      "id": "reread-loop",
+      "title": "Re-read loop"
+    },
+    {
+      "count": 3,
+      "id": "compaction",
+      "title": "Compaction"
+    },
+    {
+      "count": 4,
+      "id": "cache-miss",
+      "title": "Cache miss"
+    },
+    {
+      "count": 5,
+      "id": "reread-loop",
+      "title": "Re-read loop"
+    },
+    {
+      "count": 6,
+      "id": "compaction",
+      "title": "Compaction"
+    }
+  ]
+}

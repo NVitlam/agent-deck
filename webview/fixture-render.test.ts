@@ -50,7 +50,8 @@ import { SessionModel } from '../src/model/session.js';
 import { SessionBridge } from '../src/bridge/messages.js';
 import type { Store } from './store.js';
 import type { WebviewHarness } from './testkit.js';
-import { all, loadHarness, one, press } from './testkit.js';
+import { controlsForMode } from './testkit.js';
+import { all, loadHarness, one, press, viewControls } from './testkit.js';
 import { TESTID } from './canvas-contract.js';
 import type { ViewMode } from './canvas-contract.js';
 import { COLLAPSED_PREVIEW_CHARS, EM_DASH } from './format.js';
@@ -292,8 +293,10 @@ function render(mode: ViewMode = 'list'): Mounted {
   document.body.appendChild(container);
   const sent: WebviewToHostMessage[] = [];
   const started = harness.start(container, { postMessage: (m) => sent.push(m) });
+  // v0.9.0 DoD 9.14: the mode is the HOST's. The message is what production
+  // sends, so the mount takes the same path the editor does.
   harness.flushSync(() => {
-    started.store.setViewMode(mode);
+    started.store.handleMessage(viewControls(controlsForMode(mode)));
   });
   let disposed = false;
   const record: Mounted = {

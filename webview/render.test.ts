@@ -28,7 +28,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { SessionState, WebviewToHostMessage } from '../src/model/events.js';
 import type { Store } from './store.js';
 import type { WebviewHarness } from './testkit.js';
-import { all, loadHarness, one } from './testkit.js';
+import { all, loadHarness, one, viewControls } from './testkit.js';
 import { TESTID } from './canvas-contract.js';
 import { COLLAPSED_PREVIEW_CHARS, EM_DASH } from './format.js';
 import { liveSession, longPreview, unsupportedSession } from './testdata.js';
@@ -53,12 +53,11 @@ function render(): Mounted {
   document.body.appendChild(container);
   const sent: WebviewToHostMessage[] = [];
   const started = harness.start(container, { postMessage: (m) => sent.push(m) });
-  // The list surface, chosen before any message arrives. Through the store
-  // rather than the toggle button: the button has its own row in
-  // `states.test.ts`, and a mount that depended on it would fail twice over if
-  // it broke.
+  // The list surface, chosen before anything else arrives. v0.9.0 DoD 9.14:
+  // the mode is the HOST's and arrives on `viewControls`, which is the same
+  // message production sends — there is no toggle to press any more.
   harness.flushSync(() => {
-    started.store.setViewMode('list');
+    started.store.handleMessage(viewControls({ renderer: 'list' }));
   });
   const record: Mounted = {
     container,

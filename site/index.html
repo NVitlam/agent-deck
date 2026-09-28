@@ -19,16 +19,32 @@
     --font-display:'Courier Prime','Courier New',monospace;
     --font-body:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
     --font-mono:'IBM Plex Mono','Courier Prime',Consolas,monospace;
+    --bg-header:rgba(8,12,22,.9);
     --max-width:980px;--radius:8px;--radius-sm:4px;--measure:66ch;
     --t-fast:.15s ease;--t-base:.3s ease;
+    color-scheme:dark light;
+  }
+  /* Light — the NV design system's logo-anchored palette (DoD 9.34).
+     Named by role; the values are the system's, with its stated ratios. */
+  @media (prefers-color-scheme:light){
+    :root{
+      --bg-primary:#f2efe9;--bg-secondary:#e9e4da;--bg-card:#faf8f4;--bg-card-hover:#ffffff;
+      --bg-card-border:rgba(28,35,48,.12);--bg-card-border-hv:rgba(26,78,159,.30);
+      --blue:#1a4e9f;--blue-light:#1a4e9f;--blue-bright:#143c7a;--blue-soft:rgba(26,78,159,.06);
+      --orange:#8b3214;--orange-light:#8b3214;--orange-soft:rgba(139,50,20,.06);
+      --text-primary:#1c2330;--text-secondary:#4a5468;--text-muted:#a39d94;--text-inverse:#f2efe9;
+      --green:#35693a;--green-soft:rgba(53,105,58,.08);--green-border:rgba(53,105,58,.30);
+      --border:rgba(28,35,48,.12);--border-hover:rgba(28,35,48,.24);
+      --bg-header:rgba(242,239,233,.92);
+    }
   }
   *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
   html{-webkit-text-size-adjust:100%}
   body{font-family:var(--font-body);background:var(--bg-primary);color:var(--text-primary);line-height:1.7;-webkit-font-smoothing:antialiased}
   a{color:var(--blue-light);text-decoration:none;transition:color var(--t-fast)}
-  a:hover{color:var(--blue-bright)}
+  a:hover{color:var(--blue-bright);text-decoration:underline;text-underline-offset:3px}
   a:focus-visible,summary:focus-visible{outline:2px solid var(--blue-bright);outline-offset:3px}
-  ::selection{background:var(--blue);color:var(--text-primary)}
+  ::selection{background:var(--blue-light);color:var(--text-inverse)}
   code,.mono{font-family:var(--font-mono);font-size:.9em}
   code:not(.block){color:var(--blue-bright);background:var(--blue-soft);padding:.05em .35em;border-radius:var(--radius-sm)}
   h1,h2,h3{line-height:1.15;color:var(--text-primary)}
@@ -42,10 +58,10 @@
   li::marker{color:var(--blue)}
   .wrap{max-width:var(--max-width);margin:0 auto;padding:0 24px}
   /* section label — portfolio .section-label */
-  .tag{display:block;font-family:var(--font-mono);font-size:.7rem;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);margin-bottom:24px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+  .tag{display:block;font-family:var(--font-mono);font-size:.7rem;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--text-secondary);margin-bottom:24px;padding-bottom:12px;border-bottom:1px solid var(--border)}
   section.wrap{padding-top:64px;padding-bottom:32px}
   .lead{font-size:1.02rem;color:var(--text-secondary);max-width:60ch;margin:12px 0 28px}
-  header.top{position:sticky;top:0;z-index:20;background:rgba(8,12,22,.9);border-bottom:1px solid var(--border);backdrop-filter:blur(6px)}
+  header.top{position:sticky;top:0;z-index:20;background:var(--bg-header);border-bottom:1px solid var(--border);backdrop-filter:blur(6px)}
   .nav{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-top:14px;padding-bottom:14px;flex-wrap:wrap}
   .brand{font-family:var(--font-display);font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-primary);display:inline-flex;align-items:center;gap:10px;font-size:.95rem}
   .mark{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--blue);box-shadow:0 0 0 3px var(--blue-soft)}
@@ -60,11 +76,13 @@
   .actions{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:40px}
   .button{display:inline-block;padding:11px 20px;border:1px solid var(--bg-card-border-hv);border-radius:var(--radius-sm);color:var(--text-primary);font-family:var(--font-mono);font-size:.84rem;font-weight:500;transition:all var(--t-base)}
   .button:hover{border-color:var(--blue-light);color:var(--blue-bright)}
-  .button.primary{background:var(--blue);border-color:var(--blue);color:var(--text-primary)}
-  .button.primary:hover{background:var(--blue-light);border-color:var(--blue-light);color:var(--text-inverse)}
+  .button.primary{background:var(--blue-light);border-color:var(--blue-light);color:var(--text-inverse)}
+  .button.primary:hover{background:var(--blue-bright);border-color:var(--blue-bright);color:var(--text-inverse);text-decoration:none}
+  .button .arrow{display:inline-block;transition:transform var(--t-base)}
+  .button:hover .arrow{transform:translateX(4px)}
   figure{margin:0}
   figure img{display:block;width:100%;height:auto;border:1px solid var(--bg-card-border-hv);border-radius:var(--radius);background:var(--bg-secondary)}
-  figcaption{font-family:var(--font-mono);font-size:.74rem;color:var(--text-muted);margin-top:10px;letter-spacing:.04em}
+  figcaption{font-family:var(--font-mono);font-size:.74rem;color:var(--text-secondary);margin-top:10px;letter-spacing:.04em}
   .hero-shot{max-width:640px}
   /* trust strip */
   .trust{border-bottom:1px solid var(--border);background:var(--bg-secondary);padding:32px 0}
@@ -101,16 +119,16 @@
   .install{display:grid;grid-template-columns:1.1fr 1fr;gap:32px;align-items:start}
   .steps li{margin:8px 0}
   .code{background:var(--bg-secondary);border:1px solid var(--bg-card-border);border-radius:var(--radius);padding:20px 22px;font-family:var(--font-mono);font-size:.84rem;line-height:1.7;color:var(--text-primary)}
-  .code .comment{color:var(--text-muted)}
+  .code .comment{color:var(--text-secondary)}
   .code code.block{color:var(--blue-bright)}
   /* compatibility */
   .compat{border:1px solid var(--bg-card-border);border-radius:var(--radius);overflow:hidden;background:var(--bg-card)}
   .compat .row{display:grid;grid-template-columns:1fr .8fr 2.2fr;gap:16px;padding:12px 18px;border-bottom:1px solid var(--border);font-size:.92rem}
   .compat .row:last-child{border-bottom:0}
-  .compat .row.head{font-family:var(--font-mono);font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);background:var(--bg-secondary)}
+  .compat .row.head{font-family:var(--font-mono);font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;color:var(--text-secondary);background:var(--bg-secondary)}
   .compat .row b{color:var(--text-primary);font-weight:600}
   .compat .mono{color:var(--blue-bright)}
-  .callout{background:var(--orange-soft);border-left:2px solid var(--orange);border-radius:0 var(--radius-sm) var(--radius-sm) 0;padding:14px 18px;max-width:var(--measure);margin:24px 0;color:var(--text-secondary)}
+  .callout{background:var(--orange-soft);border-left:2px solid var(--orange);border-radius:0 var(--radius-sm) var(--radius-sm) 0;padding:14px 18px;max-width:var(--measure);margin:24px 0;color:var(--text-primary)}
   /* faq */
   .faq details{border-bottom:1px solid var(--border);padding:14px 0;max-width:var(--measure)}
   .faq summary{cursor:pointer;color:var(--text-primary);font-weight:600;list-style:none;display:flex;justify-content:space-between;align-items:center}
@@ -118,21 +136,40 @@
   .faq summary::after{content:'+';font-family:var(--font-mono);color:var(--blue-light)}
   .faq details[open] summary::after{content:'\2212'}
   .faq p{margin-top:10px;font-size:.95rem}
+  /* plans and screenshots — insights.html */
+  .plans{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+  .plans > div > h3{font-family:var(--font-mono);font-size:.7rem;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--text-secondary);margin-bottom:16px}
+  .plan{position:relative;overflow:hidden;background:var(--bg-card);border:1px solid var(--bg-card-border);border-radius:var(--radius);padding:24px;margin-bottom:16px;transition:all var(--t-base)}
+  .plan::before{content:'';position:absolute;top:0;left:0;width:100%;height:2px;background:linear-gradient(90deg,var(--blue) 0%,transparent 100%);opacity:0;transition:opacity var(--t-base)}
+  .plan:hover{border-color:var(--bg-card-border-hv);background:var(--bg-card-hover)}
+  .plan:hover::before{opacity:1}
+  .plan h4{font-size:1.05rem;font-weight:600;color:var(--text-primary);margin-bottom:4px}
+  .price{font-family:var(--font-display);font-size:1.6rem;font-weight:700;color:var(--text-primary);margin:4px 0 8px}
+  .plan p{font-size:.92rem;margin-bottom:16px}
+  .shots{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:32px}
+  .cards.one{grid-template-columns:1fr;margin-top:16px}
+  .limits.one{grid-template-columns:1fr}
+  /* the post-payment card — thanks.html */
+  .receipt{max-width:760px;padding:32px}
+  .receipt h1{margin-bottom:16px}
+  .receipt h2{margin:32px 0 12px}
+  .receipt p{font-size:1rem}
+  .receipt .button{margin-top:28px}
   .footer{border-top:1px solid var(--border);padding:32px 0 60px;margin-top:64px;font-family:var(--font-mono);font-size:.8rem;color:var(--text-secondary)}
   .footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
   .footer a{color:var(--text-secondary)}
   .footer a:hover{color:var(--blue-light)}
-  @media (max-width:820px){.trust .wrap,.cards,.engines,.limits,.install,.stats,.facts{grid-template-columns:1fr}.compat .row{grid-template-columns:1fr;gap:4px}.links{display:none}}
+  @media (max-width:820px){.trust .wrap,.cards,.engines,.limits,.install,.stats,.facts,.plans,.shots{grid-template-columns:1fr}.compat .row{grid-template-columns:1fr;gap:4px}.links{display:none}}
 </style>
 </head>
 <body>
-  <header class="top"><nav class="wrap nav"><a class="brand" href="#top"><i class="mark"></i>Agent Deck</a><div class="links"><a href="#see">What you see</a><a href="#stats">Stats</a><a href="#install">Install</a><a href="#trust">Trust</a><a href="#compatibility">Compatibility</a></div><a class="github" href="https://github.com/NVitlam/agent-deck">View on GitHub ↗</a></nav></header>
+  <header class="top"><nav class="wrap nav"><a class="brand" href="#top"><i class="mark"></i>Agent Deck</a><div class="links"><a href="#see">What you see</a><a href="#stats">Stats</a><a href="#install">Install</a><a href="#trust">Trust</a><a href="#compatibility">Compatibility</a><a href="insights.html">Insights</a></div><a class="github" href="https://github.com/NVitlam/agent-deck">View on GitHub ↗</a></nav></header>
   <main id="top">
     <div class="wrap hero">
-      <span class="eyebrow"><i class="dot"></i> VS Code extension · Open source · <span id="version">0.8.1</span></span>
+      <span class="eyebrow"><i class="dot"></i> VS Code extension · Open source · <span id="version">0.9.0</span></span>
       <h1>See the shape of your agent work.</h1>
       <p class="intro">Agent Deck turns a scrolling swarm of coding-agent activity into a live, legible map—sessions, subagents, tool calls, and cost, all inside VS Code. Claude Code, OpenCode and Codex, side by side in one panel.</p>
-      <div class="actions"><a class="button primary" href="https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck">Install Agent Deck <span>→</span></a><a class="button" href="#see">See how it works</a></div>
+      <div class="actions"><a class="button primary" href="https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck">Install Agent Deck <span class="arrow">→</span></a><a class="button" href="#see">See how it works</a></div>
       <figure class="hero-shot">
         <img src="media/tree.png" alt="Agent Deck showing one session as a live tree: the root agent and the two subagents it spawned" width="1635" height="1804">
         <figcaption>One session, two subagents, live tree.</figcaption>
@@ -160,10 +197,11 @@
         <article><h3>Stalls</h3><p>A tool call still running while its session has been silent for longer than <code>agentDeck.livenessThresholdMs</code> is drawn stalled, in amber, with the length of the silence. On <code>AskUserQuestion</code> and <code>ExitPlanMode</code> it reads “waiting on you”.</p></article>
         <article><h3>Cost, with its source named</h3><p>Reported by the engine; estimated by Claude Code, from Claude Code’s own telemetry; or estimated from your prices, set in <code>agentDeck.pricing</code>. Agent Deck ships no price table.</p></article>
         <article><h3>Claude Code telemetry, optional</h3><p>With <code>agentDeck.telemetry.enabled</code> on (off by default, machine-scoped), the hook listener also receives Claude Code’s own OpenTelemetry export on <code>/v1/metrics</code>, <code>/v1/logs</code> and <code>/v1/traces</code>, at 127.0.0.1. A Claude Code session whose start the window received carries a cost estimated by Claude Code, and a tool duration fills in where the session states none, in its stats record and the Tools part. The Agent Deck output channel’s counters line states the requests accepted, refused and unmatched in this window, and the rows for sessions another window holds as foreign.</p></article>
-        <article><h3>A sidebar in the activity bar</h3><p>Open Deck, Open Statistics, Show Diagnostics, Settings and Clear Stats History, one entry each. A Tweaks tab beside them shows four settings and writes each one to your settings.</p><figure><img src="media/sidebar-tweaks.png" alt="The sidebar’s Tweaks tab: four settings, three checked, deck ordering live" width="1080" height="760"></figure></article>
+        <article><h3>Every control in the sidebar</h3><p>One panel, four surfaces &mdash; Deck, Statistics, Insights and About &mdash; switched in place from the Menu. The panel is content only &mdash; no bars, no buttons, no chips. The sidebar carries a strip of three tabs, one open at a time: <strong>Menu</strong> (Open Deck, Open Statistics, Open Insights, Pick Agent, Show Payload, Clear History, Show Diagnostics, Settings, Clear Stats History, About), where the three after Open Insights appear only while an Insights provider offers them; <strong>View</strong> (Renderer, Sessions, Engines, Layout, Sort as collapsible groups, each showing what it is set to, plus Inspector while a drawer is open, and Reset view) and <strong>Tweaks</strong> (three settings, each with a line saying what it does, written straight to your settings). Statistics keeps its five tabs; Insights and About carry tiles, and a tile that opens a web page asks first; with an Insights provider registered, Insights carries its report list and its export actions. The view&rsquo;s title menu mirrors all three, and the keyboard shortcuts are unchanged.</p><figure><img src="media/sidebar-tweaks.png" alt="The sidebar’s settings — a screenshot of an earlier release, to be retaken" width="1080" height="760"></figure></article>
         <article><h3>Several windows, one port</h3><p>The first VS Code window binds the hook listener; later windows follow its event stream on 127.0.0.1. Every deck stays live, with nothing to configure.</p></article>
         <article><h3>The canvas and the drawer</h3><p>The canvas re-fits on each change to its geometry (<code>agentDeck.canvas.autoFit</code>, on by default). The tool-call drawer follows new calls as they arrive, and each row carries its time and the gap between calls.</p><figure><img src="media/drawer-time.png" alt="The tool-call drawer under a session’s tree: each call with its time since the agent’s first call and the gap since the call before it" width="3222" height="2142"></figure></article><article><h3>Oversize Codex transcripts</h3><p>A transcript over <code>agentDeck.codex.maxTranscriptBytes</code> is read in part — its first 256 KiB and its last 16 MiB — and its deck card reads “read in part”.</p></article>
-        <article><h3>An extension API</h3><p><code>getLiveStats()</code>, <code>getStoredStats()</code> and <code>onDidUpdateStats</code>, from the extension’s exports. It hands out stats records and nothing else.</p></article>
+        <article><h3>Insights, facts first</h3><p>The Insights surface counts what the stats history holds for the last 7 days &mdash; sessions by engine, compactions, long-idle resumes, re-read loops, failed tool calls, stalls, silent subagents, tokens, and engine-reported cost &mdash; each tile naming the field it came from. With Agent Deck Insights registered, it shows that extension&rsquo;s reports, newest first, and the one you select, which you can export as HTML, Markdown or plain text &mdash; with the same fact tiles below.</p></article>
+        <article><h3>An extension API</h3><p><code>getLiveStats()</code>, <code>getStoredStats()</code> and <code>onDidUpdateStats</code>, from the extension’s exports, at <code>apiVersion</code> 2. Version 2 adds <code>registerInsightsProvider()</code>: one provider at a time, whose data is plain JSON, checked field by field, and never executed.</p></article>
       </div>
     <!-- /g10 --></section>
     <section class="wrap" id="install"><div class="install"><div><span class="tag">Get started</span><h2>Two minutes to a clearer session.</h2><p class="lead">Install the extension, then add the optional manual hook that makes liveness truly live. You retain control of your configuration.</p><ol class="steps"><li>Install from the VS Code Marketplace.</li><li>Click the <b>Agent Deck</b> icon in the activity bar.</li><li>For live activity, paste the documented hook into your Claude Code or Codex settings.</li></ol></div><div class="code"><span class="comment"># Install from your terminal</span><br><br><code class="block">code --install-extension nvitlam.agent-deck</code><br><br><span class="comment"># Then open the Command Palette</span><br><code class="block">Agent Deck: Open Session Deck</code><br><br><span class="comment"># Need live Claude Code or Codex liveness?</span><br><span>Copy the full, reviewed hook block from the <a href="https://github.com/NVitlam/agent-deck#install-the-hook-one-manual-paste">README</a>.</span></div></div></section>
@@ -171,6 +209,17 @@
     <section class="wrap"><span class="tag">The boundary is the feature</span><h2>Useful because it stays out of the way.</h2><div class="limits"><article class="yes"><h3>What it does</h3><ul><li>Maps sessions, subagents, calls, and liveness.</li><li>Shows context, accumulated burn, and cost in place.</li><li>Redacts reasoning at the read boundary.</li><li>Refuses unsupported structures honestly.</li></ul></article><article class="no"><h3>What it never does</h3><ul><li>Write to agent settings, transcripts, or databases.</li><li>Launch, proxy, steer, or configure an agent.</li><li>Keep session content, or ship a price table.</li><li>Send data to a network service.</li></ul></article></div></section>
     <section class="wrap" id="compatibility"><span class="tag">Compatibility</span><h2>Explicit support, not hopeful parsing.</h2><p class="lead">Versions are a provenance signal; required structure is the actual gate. Unsupported sessions render as unsupported, never as a plausible but wrong tree.</p><div class="compat"><div class="row head"><b>Engine</b><b>Anchor</b><b>Acceptance rule</b></div><div class="row"><b>Claude Code</b><span class="mono">2.1.246</span><span>Major 2; minor ±1. Patch releases are not used as a cutoff.</span></div><div class="row"><b>OpenCode</b><span class="mono">1.18.22</span><span>Major 1; minor ±1. Patch releases are not used as a cutoff.</span></div><!-- engine:codex --><div class="row"><b>Codex</b><span class="mono">0.151.0-alpha.7.2</span><span>Major 0; minor ±1. Patch and prerelease tags are not compared.</span></div><!-- /engine:codex --></div><div class="callout">Imported Claude Code <span class="mono">--teleport</span> sessions intentionally render unsupported. This is an honesty boundary, not a partial-support promise.</div></section>
     <section class="wrap"><span class="tag">Questions</span><h2>Details without making the first screen do all the work.</h2><div class="faq"><details open><summary>Why is the hook manual?</summary><p>Because “read-only” includes configuration. Agent Deck never edits a Claude Code or Codex settings file; the README provides a full paste block you can inspect and choose to add.</p></details><details><summary>What happens if the hook is not installed?</summary><p>The deck can still read session content and topology. Liveness falls back to file modification time and is shown as degraded rather than silently pretending to be live.</p></details><details><summary>What data is displayed?</summary><p>Session metadata, topology, tool-call previews, and measured numbers needed by the UI. Thinking and reasoning content is discarded at the parse boundary.</p></details><details><summary>Can it control my agents?</summary><p>No. It is deliberately an observer, not an orchestration layer.</p></details></div></section>
+    <section class="wrap" id="plans"><span class="tag">Insights</span><h2>Layer 2, as a separate extension.</h2><p class="lead">Agent Deck is free, open source and read-only, and stays that way. <b>Agent Deck Insights</b> reads the same local records and groups them into patterns across sessions.</p>
+      <div class="compat">
+        <div class="row head"><b>Term</b><b>Price</b><b>Pay once, or subscribe</b></div>
+        <div class="row"><b>1 month</b><span class="mono">$10</span><span>Pay once for one month, or subscribe monthly.</span></div>
+        <div class="row"><b>6 months</b><span class="mono">$50</span><span>Pay once for six months, or subscribe every six months.</span></div>
+        <div class="row"><b>1 year</b><span class="mono">$100</span><span>Pay once for a year, or subscribe yearly.</span></div>
+      </div>
+      <div class="cards one"><article class="card"><span class="tag">Agent Deck Insights</span><h3>What it does, what it never does, and the plans</h3><p>How a run works, the evidence behind every finding, the licence key, and a checkout for each plan.</p><p><a href="insights.html">Read the Insights page <span class="arrow">→</span></a></p></article></div>
+      <p class="lead"><a href="insights.html#plans">Get Insights</a> · <a href="https://github.com/sponsors/NVitlam">Sponsors</a></p>
+      <div class="callout">Agent Deck itself is unaffected: no feature moves behind a plan, and nothing it already does depends on Insights being installed.</div>
+    </section>
   </main>
   <footer class="footer"><div class="wrap"><span><b>Agent Deck</b> · Live observability for coding-agent swarms.</span><span><a href="https://github.com/NVitlam/agent-deck/blob/main/LICENSE">MIT License</a> · <a href="https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck">VS Code Marketplace</a> · <a href="https://github.com/NVitlam/agent-deck">GitHub</a></span></div></footer>
 </body>

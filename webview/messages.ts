@@ -23,7 +23,17 @@ export const HOST_MESSAGE_TYPES: readonly HostToWebviewMessage['type'][] = [
   'statsSnapshot',
   'statsStore',
   'settings',
-  'showView',
+  'viewControls',
+  'viewAction',
+  // The sidebar's whole render, in one message (v0.9.0 DoD 9.17). The PANEL
+  // drops it — `store.ts` has no arm for it — and the sidebar drops
+  // everything else; both are asserted, so neither surface is trusted to
+  // ignore the other's traffic by accident.
+  'sidebarState',
+  // The Insights and About surfaces' state (v0.9.0 DoD 9.29–9.32): the
+  // registered provider's checked snapshot, or `null`, and the extension's
+  // version for About's footer. The panel reads it; the sidebar drops it.
+  'providerState',
 ];
 
 /** Type guard for anything arriving on `window.message`. */

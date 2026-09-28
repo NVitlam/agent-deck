@@ -30,8 +30,14 @@ import type {
   WebviewToHostMessage,
 } from '../model/events.js';
 import type { SessionEmission } from '../model/session.js';
-import { isSidebarCommand } from '../sidebar/menu.js';
-import { isTweakKey, isTweakValue } from '../sidebar/tweaks.js';
+// The allow-list, from the one table. `controls.ts` has no imports at all, so
+// this adds nothing to the layer `apply.test.ts` pins.
+import { isControlCommand } from '../view/controls.js';
+// The About links, for the `aboutLink` index bound. `about.ts` has no imports.
+import { ABOUT_LINKS } from '../about.js';
+// The run id's pattern and the list's cap, for the report list's intents
+// (DoD 9.46, 9.47) — the same two numbers the registry checks a provider by.
+import { ID_PATTERN, MAX_RUNS } from '../insights-provider.js';
 import { applySessionPatch } from './apply.js';
 
 // ---------------------------------------------------------------------------
@@ -76,16 +82,54 @@ export const WEBVIEW_TO_HOST_TYPES = [
   // through it; `sessionId` is optional because a diff for an unknown session
   // has no session state to name.
   'resyncRequest',
-  // v0.7.0 Phase 4, DoD 4.6b. The SIDEBAR's one message: run a menu command.
-  // `command` must be a member of `src/sidebar/menu.ts`'s list — validated
-  // HERE, at the boundary, so a message that merely looks like a menu entry
-  // cannot make the host execute an arbitrary command id.
+  /*
+   * v0.9.0 DoD 9.18 — `runCommand` is back, and the LIST is what changed.
+   *
+   * It was removed by DoD 9.14 on the reading that the dead About button was
+   * the message's fault. It was not: the arm validated the command against
+   * the SIDEBAR's five-entry menu while the panel rendered a different set,
+   * so two lists disagreed and the commands only one of them held were
+   * dropped here. The arm below asks `isControlCommand`, which reads the ONE
+   * table every other party reads, so a command that a surface can render is
+   * a command this guard accepts — by construction rather than by upkeep.
+   */
   'runCommand',
-  // v0.8.0 Phase 7, DoD 7.6. The TWEAKS panel's one message: write one
-  // setting. `key` must be a member of `src/sidebar/tweaks.ts`'s list and
-  // `value` a value that member may take — validated HERE, at the boundary,
-  // because the host's next act is to write it into the user's settings.
-  'updateTweak',
+  /*
+   * The panel saying whether a drawer is open (DoD 9.17). A state report, not
+   * a command: it decides whether View ▸ Inspector is shown, and nothing else
+   * reads it.
+   */
+  'drawerState',
+  /*
+   * v0.9.0 DoD 9.29–9.32 — the two surfaces that joined the panel. About's
+   * tile names a link BY INDEX, never by url; the Insights surface's Get tile
+   * and Run action carry nothing at all. Each is an intent the host checks
+   * again before acting: the index against the array, Get against the one
+   * url it holds, Run against whether a provider is registered.
+   */
+  'aboutLink',
+  'insightsGet',
+  /*
+   * v0.9.0 DoD 9.40 — "Show raw output" on a refused set. No payload: the
+   * host resolves the run from the snapshot it built and asks the provider,
+   * so a renderer can name no run id of its own.
+   */
+  'insightsRawOutput',
+  /*
+   * v0.9.0 DoD 9.46, 9.47 — the report list and Export. A row names its run
+   * by id (checked here against the id pattern, and at the host against the
+   * list it holds); an Export action names its target and nothing else (the
+   * run is the host's selection); "Export ticked" names the ticked ids.
+   * `insightsRun` was here until DoD 9.46: the surface has no Run action.
+   */
+  'insightsSelect',
+  'insightsExport',
+  'insightsExportBatch',
+  /*
+   * v0.9.0 DoD 9.54 — Investigate Report. No payload, like Export: the run
+   * is the host's selection, and the host calls the provider with its id.
+   */
+  'insightsInvestigate',
 ] as const;
 
 /**
@@ -189,15 +233,65 @@ export function isWebviewToHostMessage(
         return true;
       }
       case 'runCommand': {
+        /*
+         * THE ALLOW-LIST, ASKED ONCE (DoD 9.18).
+         *
+         * `isControlCommand` reads `CONTROL_COMMANDS` — the same array
+         * `package.json` is generated from, the sidebar renders and
+         * `activate()` registers. A renderer can therefore name one of our
+         * commands or nothing; it can never name a command of the editor's,
+         * of another extension's, or one of ours that is not in the table.
+         *
+         * WHICH SURFACE may send WHICH command is a second question, asked
+         * by the host's own dispatch through `isCommandFrom` — also a
+         * reading of this table, not a list beside it.
+         */
         const command = ownNonEmptyString(value, 'command');
-        return command !== undefined && isSidebarCommand(command);
+        if (command === undefined) return false;
+        return isControlCommand(command);
       }
-      case 'updateTweak': {
-        const key = ownNonEmptyString(value, 'key');
-        if (key === undefined || !isTweakKey(key)) return false;
-        // `ownDataProperty`, not a plain read: the value may legitimately be
-        // `false`, which every "is it there" shortcut would discard.
-        return isTweakValue(key, ownDataProperty(value, 'value'));
+      case 'drawerState':
+        // A boolean and nothing else: no truthiness, because the next thing
+        // the host does is state it to a second surface.
+        return typeof ownDataProperty(value, 'open') === 'boolean';
+      case 'aboutLink': {
+        // An integer INSIDE the array, or nothing. The next thing the host
+        // does with it is ask to open a url, so a renderer may name one of
+        // our four links and never a value of its own.
+        const index = ownDataProperty(value, 'index');
+        return (
+          typeof index === 'number' &&
+          Number.isInteger(index) &&
+          index >= 0 &&
+          index < ABOUT_LINKS.length
+        );
+      }
+      case 'insightsGet':
+      case 'insightsRawOutput':
+      case 'insightsInvestigate':
+        // No payload. The type IS the whole message.
+        return true;
+      case 'insightsSelect': {
+        const runId = ownDataProperty(value, 'runId');
+        return typeof runId === 'string' && ID_PATTERN.test(runId);
+      }
+      case 'insightsExport': {
+        const target = ownDataProperty(value, 'target');
+        return target === 'html' || target === 'markdown' || target === 'copy';
+      }
+      case 'insightsExportBatch': {
+        // A real array of 1 to MAX_RUNS distinct ids, each read by index as
+        // an own data property — never through an iterator a hostile
+        // object could supply.
+        const runIds = ownDataProperty(value, 'runIds');
+        if (!Array.isArray(runIds) || runIds.length === 0 || runIds.length > MAX_RUNS) return false;
+        const seen = new Set<string>();
+        for (let i = 0; i < runIds.length; i += 1) {
+          const id = ownDataProperty(runIds, String(i));
+          if (typeof id !== 'string' || !ID_PATTERN.test(id) || seen.has(id)) return false;
+          seen.add(id);
+        }
+        return true;
       }
       default:
         return false;

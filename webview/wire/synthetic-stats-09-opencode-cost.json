@@ -98,7 +98,7 @@
         "type": "statsSnapshot",
         "records": [
           {
-            "statsSchemaVersion": 2,
+            "statsSchemaVersion": 3,
             "sessionId": "synthetic-09-opencode-cost",
             "engine": "opencode",
             "projectSlug": "synthetic-stats",
@@ -139,6 +139,7 @@
             ],
             "loops": [],
             "churn": [],
+            "skills": [],
             "contextChurn": [],
             "compactions": [],
             "stalls": [],
@@ -162,7 +163,8 @@
               "F13.completed:snapshot",
               "F14:opencode",
               "F15:opencode",
-              "F7:opencode"
+              "F7:opencode",
+              "skills:opencode"
             ]
           }
         ]

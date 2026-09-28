@@ -1,0 +1,7 @@
+Report · 2026-09-20 12:00 UTC
+Codex 0.151.0
+2 sessions since 2026-09-18 12:00 UTC; 1 excluded
+
+Refused at step: <img src=x onerror=y> ![s](https://example.invalid/s.png)
+<script src="https://example.invalid/r.js"></script>
+[r](https://example.invalid/) | # *

@@ -16,23 +16,26 @@
  * G7, live only: no `localStorage`, no `sessionStorage`, no history. A reload
  * starts blank and waits for the host's snapshot.
  *
- * TWO SURFACES, ONE BUNDLE (v0.7.0 Phase 4, DoD 4.6b). The activity-bar
- * sidebar loads this same script. Which surface mounts is decided by which
- * root the host's document carries: `SIDEBAR_ROOT_ID` mounts the sidebar's two
- * tabs and `WEBVIEW_ROOT_ID` mounts the app. One bundle means one CSP, one egress
- * guard and one stylesheet cover both, which is what spec §G2's "same bundle
- * rules" asks for.
+ * TWO SURFACES, ONE BUNDLE. The activity-bar sidebar loads this same script.
+ * Which surface mounts is decided by which root the host's document carries:
+ * `SIDEBAR_ROOT_ID` mounts the sidebar's four pages and `WEBVIEW_ROOT_ID`
+ * mounts the app. One bundle means one CSP, one egress guard and one
+ * stylesheet cover both, which is what spec §G2's "same bundle rules" asks
+ * for.
+ *
+ * (v0.9.0 DoD 9.14 made this one surface for half a day, when the sidebar was
+ * a native `TreeView`. `Amendment 2026-09-20 — Sidebar shape` supersedes that
+ * ruling and the second surface is back.)
  */
 
-import type { WebviewToHostMessage } from '../src/model/events.js';
+import type { SidebarStateMessage, WebviewToHostMessage } from '../src/model/events.js';
 import App from './App.svelte';
 import Sidebar from './sidebar/Sidebar.svelte';
-import { createTweaksSource } from './sidebar/tweaks-source.js';
+import { createSidebarSource } from './sidebar/source.js';
 import { createStore } from './store.js';
 import type { Store } from './store.js';
 import { mount, unmount } from 'svelte';
 import { SIDEBAR_ROOT_ID, WEBVIEW_ROOT_ID } from '../src/bridge/contract.js';
-import { SIDEBAR_MENU } from '../src/sidebar/menu.js';
 
 /** The slice of the VS Code webview API this renderer uses. */
 interface VsCodeApi {
@@ -95,46 +98,43 @@ export function start(target: HTMLElement, api: VsCodeApi = acquireApi()): {
 }
 
 /**
- * Start the SIDEBAR against a container (DoD 4.6b; two tabs as of DoD 7.6).
+ * Start the SIDEBAR against a container — v0.9.0 DoD 9.17.
  *
- * NO STORE, and it now takes ONE inbound message. Until v0.8.0 this function's
- * doc said "no store and no inbound messages", which was true of a surface
- * that was a list of buttons. The Tweaks tab renders four settings and the
- * amendment makes settings the source of truth, so the panel has to be told
- * what they are: the host's `settings` message — the same one the panel reads
- * for `canvasAutoFit`, not a second type — reaches
- * the sidebar's `TweaksSource`, and a control's position is whatever the last
- * one said. Session data still never reaches this surface, and no store is
- * constructed here.
+ * NO STORE. Session data never reaches this surface: it takes exactly one
+ * message type, `sidebarState`, and drops everything else that arrives on its
+ * port. The one thing it sends is `runCommand`, whose id the host validates
+ * against the same table this surface rendered it from (DoD 9.18).
  *
  * Exported for the same reason {@link start} is — the harness drives exactly
- * what VS Code drives.
+ * what VS Code drives, so the boundary test can click a real row and watch a
+ * real host act on it.
  */
 export function startSidebar(target: HTMLElement, api: VsCodeApi = acquireApi()): {
   dispose: () => void;
 } {
-  const source = createTweaksSource((message) => api.postMessage(message));
+  const source = createSidebarSource((message) => api.postMessage(message));
+  const sidebar = mount(Sidebar, { target, props: { source } });
 
   const onMessage = (event: MessageEvent<unknown>): void => {
     // Same guard as the panel's, and for the same reason (G3): the sidebar
     // must survive anything that reaches its message port. Everything but
-    // `settings` is dropped — there is no session data on this surface.
+    // `sidebarState` is dropped — there is no session data on this surface.
     if (!isHostMessage(event.data)) return;
-    if (event.data.type !== 'settings') return;
-    source.accept(event.data.tweaks);
+    if (event.data.type !== 'sidebarState') return;
+    const message: SidebarStateMessage = event.data;
+    source.accept({
+      controls: message.controls,
+      tweaks: message.tweaks,
+      provider: message.provider,
+      // DoD 9.45. This forward was MISSING on the first build of round 6 and
+      // the rows under Open Insights never drew — the forwarding-site class,
+      // caught by `sidebar.test.ts` driving the shipped bundle.
+      insightsActions: message.insightsActions,
+      drawerOpen: message.drawerOpen,
+    });
   };
   globalThis.addEventListener('message', onMessage);
 
-  const sidebar = mount(Sidebar, {
-    target,
-    props: {
-      entries: SIDEBAR_MENU,
-      onrun: (command: string) => {
-        api.postMessage({ type: 'runCommand', command });
-      },
-      source,
-    },
-  });
   return {
     dispose: () => {
       globalThis.removeEventListener('message', onMessage);
@@ -150,7 +150,7 @@ export function startSidebar(target: HTMLElement, api: VsCodeApi = acquireApi())
 // cross-package dependency: the extension host owns the webview HTML, and if
 // this file required an element id the host did not happen to use, the panel
 // would come up blank with no error anywhere. The sidebar has no fallback:
-// mounting a command menu into a stray body is the wrong surface, not a
+// mounting a control surface into a stray body is the wrong surface, not a
 // degraded one.
 //
 // Gating on `acquireVsCodeApi` is what keeps this out of the tests: outside a

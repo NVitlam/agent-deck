@@ -60,6 +60,7 @@
       }
     ],
     "model": "claude-opus-5",
+    "agentType": null,
     "compactions": null,
     "startedAtOffsetMs": 0,
     "endedAtOffsetMs": null,
@@ -73,6 +74,7 @@
         "resultPreview": "sha256:b54b57ce6609b9a4:566",
         "durationMs": 69943,
         "filePath": null,
+        "skillName": null,
         "inputHash": "646ed122accacdf701a69378df65bd5077a962d39c34591eccfb52ff235ab6b8",
         "ordinal": 0
       },
@@ -150,6 +152,7 @@
           }
         ],
         "model": "claude-opus-5",
+        "agentType": "Explore",
         "compactions": null,
         "startedAtOffsetMs": 8244,
         "endedAtOffsetMs": 75962,
@@ -163,6 +166,7 @@
             "resultPreview": "sha256:e469531b700fd40d:272",
             "durationMs": 3931,
             "filePath": null,
+            "skillName": null,
             "inputHash": "0451a4e61fdc61ba9f8d20d97a4695a8d8a9a1fc62fc62be3062e52b95a40d17",
             "ordinal": 0
           },
@@ -175,6 +179,7 @@
             "resultPreview": "sha256:16908e0d9c6700f2:109",
             "durationMs": 3663,
             "filePath": null,
+            "skillName": null,
             "inputHash": "8281da175c85a78c59bdce93efb2fe3debd20209d3043e4e70cc986ed39c6bdf",
             "ordinal": 1
           },
@@ -187,6 +192,7 @@
             "resultPreview": "sha256:45c3d51089f0efb0:567",
             "durationMs": 384,
             "filePath": "sha256:98aa129515a3fe95:46",
+            "skillName": null,
             "inputHash": "ff3839dc10c877ad3bd66c03304ae840d31cc1a453b3942362f69fbc7c456bf9",
             "ordinal": 2
           },
@@ -199,6 +205,7 @@
             "resultPreview": "sha256:6c30f24c11c97d9b:567",
             "durationMs": 338,
             "filePath": "sha256:d3c1d5ecd49a9259:49",
+            "skillName": null,
             "inputHash": "82e20cabb9f71575a3129cc069942e5049c93605f43d642f5cf12cc44f9eee0c",
             "ordinal": 3
           },
@@ -211,6 +218,7 @@
             "resultPreview": "sha256:f01a2151aeb92dcf:566",
             "durationMs": 348,
             "filePath": "sha256:61226175343541a0:47",
+            "skillName": null,
             "inputHash": "9fa5893da13b2cd0cca7cc7695068555e0d376025886344a13911b195c70cd75",
             "ordinal": 4
           },
@@ -223,6 +231,7 @@
             "resultPreview": "sha256:e625b791991d45dd:566",
             "durationMs": 316,
             "filePath": "sha256:28e4e2bc2a21db2b:49",
+            "skillName": null,
             "inputHash": "e58028b90463cc7dd1e8dc6595dd3eeb4f03d4b1624ec745d88597a4cfb4abc9",
             "ordinal": 5
           },
@@ -235,6 +244,7 @@
             "resultPreview": "sha256:d20a58fae5d00593:567",
             "durationMs": 305,
             "filePath": "sha256:87946cf39c8ba834:47",
+            "skillName": null,
             "inputHash": "7cab20e0ea072156986a98d911fa672abd274784fd00184d13b8feeac7649cd7",
             "ordinal": 6
           },
@@ -247,6 +257,7 @@
             "resultPreview": "sha256:f7d3bdc57cc1bd16:241",
             "durationMs": 838,
             "filePath": null,
+            "skillName": null,
             "inputHash": "c82eacf658b0c65e5a3ba2d591a18057fc853dce5e3c7bddc83b117388cd2003",
             "ordinal": 7
           },
@@ -259,6 +270,7 @@
             "resultPreview": "sha256:74198b9c2dd9ea18:111",
             "durationMs": 414,
             "filePath": null,
+            "skillName": null,
             "inputHash": "3cd8bc7b1f3f27c1c765932f05a3bf4e3727a168b8fc6e77b9729fd8da42b076",
             "ordinal": 8
           },
@@ -271,6 +283,7 @@
             "resultPreview": "sha256:09af621043c0737f:266",
             "durationMs": 519,
             "filePath": null,
+            "skillName": null,
             "inputHash": "008dc8f809fefe5f2357907cbc44650af2cdbcf399c1a4a67a27775f1c30dd9e",
             "ordinal": 9
           },
@@ -283,6 +296,7 @@
             "resultPreview": "sha256:313b67cf85099c16:565",
             "durationMs": 2579,
             "filePath": null,
+            "skillName": null,
             "inputHash": "a402f1bcada1b55966102a08c6c7f3e2287637a1a9ea93b78356d7ebbe829e38",
             "ordinal": 10
           }

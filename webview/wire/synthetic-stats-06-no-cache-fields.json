@@ -88,7 +88,7 @@
         "type": "statsSnapshot",
         "records": [
           {
-            "statsSchemaVersion": 2,
+            "statsSchemaVersion": 3,
             "sessionId": "synthetic-06-no-cache-fields",
             "engine": "cc",
             "projectSlug": "synthetic-stats",
@@ -117,6 +117,7 @@
             ],
             "loops": [],
             "churn": [],
+            "skills": [],
             "contextChurn": [],
             "compactions": [],
             "stalls": [],

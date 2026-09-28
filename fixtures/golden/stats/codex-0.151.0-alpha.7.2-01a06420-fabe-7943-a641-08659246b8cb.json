@@ -1,5 +1,5 @@
 {
-  "statsSchemaVersion": 2,
+  "statsSchemaVersion": 3,
   "sessionId": "01a06420-fabe-7943-a641-08659246b8cb",
   "engine": "codex",
   "projectSlug": "C--Users-dev-codex-probe-scratch",
@@ -59,6 +59,7 @@
   ],
   "loops": [],
   "churn": [],
+  "skills": [],
   "contextChurn": [],
   "compactions": [],
   "stalls": [],
@@ -90,6 +91,7 @@
     "F4:codex",
     "F6:codex",
     "F7:codex",
-    "F9:codex"
+    "F9:codex",
+    "skills:codex"
   ]
 }

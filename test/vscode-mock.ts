@@ -25,6 +25,8 @@
  * {@link resetVscodeMock}.
  */
 
+import { readFileSync } from 'node:fs';
+
 // ---------------------------------------------------------------------------
 // Uri
 // ---------------------------------------------------------------------------
@@ -48,8 +50,27 @@ export class Uri {
     return new Uri(base.scheme, joined);
   }
 
+  /**
+   * `vscode.Uri.parse` — v0.9.0 DoD 9.7.
+   *
+   * Keeps the WHOLE string rather than splitting it into scheme and path,
+   * because `toString()` is what a test asserts about an opened link, and a
+   * lossy round trip would make that assertion about this mock rather than
+   * about the url. `parsed` carries the original; `toString` returns it.
+   */
+  static parse(value: string): Uri {
+    const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):/.exec(value)?.[1] ?? 'file';
+    const uri = new Uri(scheme, value);
+    uri.#parsed = value;
+    return uri;
+  }
+
+  /** Set only by {@link Uri.parse}; see the note there. */
+  #parsed: string | undefined;
+
   toString(): string {
-    return `${this.scheme}://${this.fsPath}`;
+    // A parsed url is returned verbatim — see {@link Uri.parse}.
+    return this.#parsed ?? `${this.scheme}://${this.fsPath}`;
   }
 }
 
@@ -198,18 +219,41 @@ export class MockWebviewPanel {
   disposed = false;
   revealCount = 0;
 
+  /**
+   * `vscode.WebviewPanel.options` — the PANEL's options, which is where
+   * `retainContextWhenHidden` lives (the webview's own options are
+   * `webview.options`). The real API hands back what `createWebviewPanel` was
+   * given; so does this.
+   */
+  readonly options: { retainContextWhenHidden?: boolean };
+
   readonly webview: MockWebview;
+
+  /**
+   * What the DOCUMENT on the other end has received since it last loaded —
+   * v0.9.0 DoD 9.49. `webview.posted` is what the host SENT, which survives a
+   * hide; this is what the renderer HOLDS, which does not unless the panel
+   * retains its context. See {@link MockWebviewPanel.hideThenShow}.
+   */
+  readonly document: unknown[] = [];
 
   readonly #inbound = new Emitter<unknown>();
   readonly #viewState = new Emitter<{ webviewPanel: MockWebviewPanel }>();
   readonly #onDispose = new Emitter<void>();
   readonly #posted: unknown[] = [];
+  #documentLive = true;
 
   constructor(viewType: string, title: string, options: unknown) {
     this.viewType = viewType;
     this.title = title;
+    const retain =
+      typeof options === 'object' && options !== null &&
+      (options as { retainContextWhenHidden?: unknown }).retainContextWhenHidden === true;
+    this.options = retain ? { retainContextWhenHidden: true } : {};
     const posted = this.#posted;
     const inbound = this.#inbound;
+    const held = this.document;
+    const live = (): boolean => this.#documentLive;
     this.webview = {
       html: '',
       options,
@@ -227,6 +271,7 @@ export class MockWebviewPanel {
       asWebviewUri: (uri: Uri) => uri,
       postMessage: (message: unknown) => {
         posted.push(message);
+        if (live()) held.push(message);
         return Promise.resolve(true);
       },
       onDidReceiveMessage: (listener: (raw: unknown) => void) => inbound.event(listener),
@@ -274,6 +319,34 @@ export class MockWebviewPanel {
     this.#viewState.fire({ webviewPanel: this });
   }
 
+  /**
+   * Another editor covers the panel in its group, then goes away — the
+   * own-eyes break of 2026-09-24 (v0.9.0 DoD 9.49).
+   *
+   * RETAINED (`options.retainContextWhenHidden`): the document lives through
+   * the hide and everything posted reaches it.
+   *
+   * NOT RETAINED: the document is torn down on the hide, and what the host
+   * posts INSIDE the visibility callback does not reach the rebuilt one; it is
+   * live again only after the callback returns. That second half is the FIELD
+   * OBSERVATION, not a measured mechanism: the host's resend ran in exactly
+   * that callback and the deck still came back empty until the next state
+   * send. It is modelled as observed, so a test on this double reproduces the
+   * break rather than the resend's intent.
+   */
+  hideThenShow(): void {
+    this.visible = false;
+    this.#viewState.fire({ webviewPanel: this });
+    const retained = this.options.retainContextWhenHidden === true;
+    if (!retained) {
+      this.document.length = 0;
+      this.#documentLive = false;
+    }
+    this.visible = true;
+    this.#viewState.fire({ webviewPanel: this });
+    this.#documentLive = true;
+  }
+
   get subscriberCount(): number {
     return (
       this.#inbound.listeners.size +
@@ -291,6 +364,45 @@ interface MockState {
   workspaceFolders: { uri: Uri; name: string; index: number }[] | undefined;
   configuration: Map<string, Map<string, unknown>>;
   commands: Map<string, (...args: unknown[]) => unknown>;
+  /** Extension ids this fake editor has installed (DoD 9.6). */
+  extensions: Set<string>;
+  /**
+   * What an installed extension's record carries — DoD 9.25.
+   *
+   * The real `vscode.Extension` has a manifest and an activation state, and
+   * "Open Insights did nothing" was a question about both: which commands the
+   * manifest contributes, and whether the extension was active when the
+   * parent ran one. An installed id with no entry here gets
+   * {@link DEFAULT_EXTENSION_MANIFEST}.
+   */
+  extensionManifests: Map<string, MockExtensionManifest>;
+  /** Ids whose record reports `isActive: true`. */
+  activeExtensions: Set<string>;
+  /**
+   * Every `showInformationMessage` call, with the buttons it offered (DoD
+   * 9.23). The BUTTONS are recorded because "a message was shown" and "the
+   * user was asked" are different claims, and only the second is the one the
+   * About confirmation makes.
+   */
+  informationPrompts: { message: string; items: string[]; modal: boolean }[];
+  /** Every line written to any output channel, with the channel's name. */
+  outputLines: { channel: string; line: string }[];
+  /** The name of every `createOutputChannel` call, in order. */
+  outputChannelsCreated: string[];
+  /** The name of every output channel `dispose()`d, in order. */
+  outputChannelsDisposed: string[];
+  /** Every URI handed to `env.openExternal`, in order (DoD 9.7). */
+  openedExternal: string[];
+  /**
+   * Every UNTITLED document opened with content, and whether it was then
+   * SHOWN (v0.9.0 DoD 9.40). Both, because "a document was made" and "the
+   * user sees it" are two claims, and the raw-output action makes the second.
+   */
+  openedDocuments: { content: string; language: string | undefined; shown: boolean }[];
+  /** When set, the next `openTextDocument` rejects (verifier round 9.43, W2). */
+  openTextDocumentFails: boolean;
+  /** What the next modal returns, as if the user had pressed it (DoD 9.7). */
+  modalAnswer: string | undefined;
   panels: MockWebviewPanel[];
   /**
    * Every `createWebviewPanel` call's `viewColumn`, in order (v0.7.0 DoD
@@ -308,6 +420,12 @@ interface MockState {
   executed: { command: string; args: unknown[] }[];
   /** The providers `registerWebviewViewProvider` was given, by view id. */
   viewProviders: Map<string, { resolveWebviewView(view: MockWebviewView): void }>;
+  /** The tree views `createTreeView` was given, by view id (DoD 9.14). */
+  treeViews: Map<string, MockTreeView<unknown>>;
+  /** Every `showQuickPick` call, in order, with the items it offered. */
+  quickPicks: { items: string[]; placeHolder: string | undefined }[];
+  /** What the next `showQuickPick` returns, when it is one of the items. */
+  quickPickAnswer: string | undefined;
   /** What `window.tabGroups.all.length` reports. Default one group. */
   editorGroups: number;
   errorMessages: string[];
@@ -342,16 +460,56 @@ interface MockState {
    */
   configurationWrites: { section: string; key: string; value: unknown; target: number | undefined }[];
   configurationEmitter: Emitter<{ affectsConfiguration(section: string): boolean }>;
+  /**
+   * v0.9.0 DoD 9.45 — every `setContext` the extension ran, by key, holding
+   * the LAST value. The real editor keeps exactly that; a test reads it to
+   * see what the Menu submenu and the palette would show.
+   */
+  contexts: Map<string, unknown>;
+  /**
+   * v0.9.0 DoD 9.47 — every file `workspace.fs.writeFile` wrote, by `fsPath`,
+   * as UTF-8 text. IN MEMORY: the double writes nothing to disk, so a test
+   * can assert the bytes an export produced without a scratch directory.
+   */
+  writtenFiles: Map<string, string>;
+  /** What `workspace.fs.readDirectory` lists, by folder `fsPath`. */
+  directories: Map<string, string[]>;
+  /** Folders `readDirectory` REJECTS for (verifier round 9.48, W3). */
+  unlistable: Set<string>;
+  /** Every `showSaveDialog` call's options, in order. */
+  saveDialogs: { defaultUri: string | undefined; filters: Record<string, string[]> | undefined }[];
+  /** What the next `showSaveDialog` returns — an `fsPath`, or `undefined` (cancelled). */
+  saveDialogAnswer: string | undefined;
+  /** Every `showOpenDialog` call's options, in order. */
+  openDialogs: { canSelectFolders: boolean; canSelectFiles: boolean }[];
+  /** What the next `showOpenDialog` returns — a folder `fsPath`, or `undefined`. */
+  openDialogAnswer: string | undefined;
+  /** What `env.clipboard.writeText` last wrote, or `undefined`. */
+  clipboard: string | undefined;
 }
 
 const state: MockState = {
   workspaceFolders: undefined,
   configuration: new Map(),
   commands: new Map(),
+  extensions: new Set<string>(),
+  extensionManifests: new Map(),
+  activeExtensions: new Set<string>(),
+  informationPrompts: [],
+  outputLines: [],
+  outputChannelsCreated: [],
+  outputChannelsDisposed: [],
+  openedExternal: [] as string[],
+  openedDocuments: [] as { content: string; language: string | undefined; shown: boolean }[],
+  openTextDocumentFails: false,
+  modalAnswer: undefined as string | undefined,
   panels: [],
   panelColumns: [],
   executed: [],
   viewProviders: new Map(),
+  treeViews: new Map(),
+  quickPicks: [],
+  quickPickAnswer: undefined as string | undefined,
   editorGroups: 1,
   errorMessages: [],
   informationMessages: [],
@@ -359,6 +517,15 @@ const state: MockState = {
   warningAnswer: undefined,
   configurationWrites: [],
   configurationEmitter: new Emitter(),
+  contexts: new Map(),
+  writtenFiles: new Map(),
+  directories: new Map(),
+  unlistable: new Set(),
+  saveDialogs: [],
+  saveDialogAnswer: undefined,
+  openDialogs: [],
+  openDialogAnswer: undefined,
+  clipboard: undefined,
 };
 
 /** Drop every piece of mock state. Call in `beforeEach`. */
@@ -370,14 +537,54 @@ export function resetVscodeMock(): void {
   state.panelColumns = [];
   state.executed = [];
   state.viewProviders = new Map();
+  state.treeViews = new Map();
+  state.quickPicks = [];
+  state.quickPickAnswer = undefined;
   state.editorGroups = 1;
   state.errorMessages = [];
   state.informationMessages = [];
   state.warningMessages = [];
   state.warningAnswer = undefined;
+  state.openedExternal = [];
+  state.openedDocuments = [];
+  state.openTextDocumentFails = false;
+  state.modalAnswer = undefined;
   state.configurationWrites = [];
   state.configurationEmitter = new Emitter();
+  state.contexts = new Map();
+  state.writtenFiles = new Map();
+  state.directories = new Map();
+  state.unlistable = new Set();
+  state.saveDialogs = [];
+  state.saveDialogAnswer = undefined;
+  state.openDialogs = [];
+  state.openDialogAnswer = undefined;
+  state.clipboard = undefined;
+  state.extensionManifests = new Map();
+  state.activeExtensions = new Set();
+  state.informationPrompts = [];
+  state.outputLines = [];
+  state.outputChannelsCreated = [];
+  state.outputChannelsDisposed = [];
 }
+
+/**
+ * An installed extension's manifest, as far as this double needs one.
+ *
+ * `commands` is what `contributes.commands` lists; activating the extension
+ * registers a handler for each, which is what the real editor's activation
+ * of a contributing extension ends in. `failOnActivate` makes `activate()`
+ * reject, and `commandErrors` makes the named command's handler throw.
+ */
+export interface MockExtensionManifest {
+  version: string;
+  commands: string[];
+  failOnActivate?: string;
+  commandErrors?: Record<string, string>;
+}
+
+/** An installed extension with no manifest of its own. Contributes nothing. */
+export const DEFAULT_EXTENSION_MANIFEST: MockExtensionManifest = { version: '0.0.0', commands: [] };
 
 /** Test control surface. Never imported by production code. */
 export const mock = {
@@ -413,6 +620,48 @@ export const mock = {
   hasCommand(id: string): boolean {
     return state.commands.has(id);
   },
+  /** DoD 9.6 — install or uninstall an extension in this fake editor. */
+  setExtensionInstalled(id: string, installed: boolean, manifest?: MockExtensionManifest): void {
+    if (installed) state.extensions.add(id);
+    else state.extensions.delete(id);
+    if (manifest !== undefined) state.extensionManifests.set(id, manifest);
+  },
+  /** DoD 9.25 — is that extension's record active now? */
+  isExtensionActive(id: string): boolean {
+    return state.activeExtensions.has(id);
+  },
+  /** DoD 9.23 — every information message and the buttons it offered. */
+  get informationPrompts(): { message: string; items: string[]; modal: boolean }[] {
+    return state.informationPrompts;
+  },
+  /** DoD 9.25 — every line written to an output channel. */
+  get outputLines(): { channel: string; line: string }[] {
+    return state.outputLines;
+  },
+  /** DoD 9.26 — every `createOutputChannel` call, by name. */
+  get outputChannelsCreated(): string[] {
+    return state.outputChannelsCreated;
+  },
+  /** DoD 9.26 — every output channel disposed, by name. */
+  get outputChannelsDisposed(): string[] {
+    return state.outputChannelsDisposed;
+  },
+  /** DoD 9.7 — every URI handed to `env.openExternal`, in order. */
+  get openedExternal(): readonly string[] {
+    return state.openedExternal;
+  },
+  /** DoD 9.40 — every untitled document opened with content, and whether shown. */
+  get openedDocuments(): readonly { content: string; language: string | undefined; shown: boolean }[] {
+    return state.openedDocuments;
+  },
+  /** Verifier round 9.43, W2 — make the next `openTextDocument` reject. */
+  failNextOpenTextDocument(): void {
+    state.openTextDocumentFails = true;
+  },
+  /** DoD 9.7 — answer the next modal as if the user had pressed that button. */
+  answerModal(label: string | undefined): void {
+    state.modalAnswer = label;
+  },
   get panels(): MockWebviewPanel[] {
     return state.panels;
   },
@@ -438,6 +687,59 @@ export const mock = {
   },
   hasViewProvider(viewId: string): boolean {
     return state.viewProviders.has(viewId);
+  },
+  /** The tree view a `createTreeView` call registered (DoD 9.14). */
+  treeView(viewId: string): MockTreeView<unknown> {
+    const view = state.treeViews.get(viewId);
+    if (view === undefined) throw new Error(`no tree view created: ${viewId}`);
+    return view;
+  },
+  hasTreeView(viewId: string): boolean {
+    return state.treeViews.has(viewId);
+  },
+  /** Every `showQuickPick` call, in order. */
+  get quickPicks(): { items: string[]; placeHolder: string | undefined }[] {
+    return state.quickPicks;
+  },
+  /** What the next `showQuickPick` returns. Ignored unless it is offered. */
+  answerQuickPick(answer: string | undefined): void {
+    state.quickPickAnswer = answer;
+  },
+  /** DoD 9.45 — the last value `setContext` gave each key. */
+  get contexts(): ReadonlyMap<string, unknown> {
+    return state.contexts;
+  },
+  /** DoD 9.47 — every file written through `workspace.fs`, by `fsPath`. */
+  get writtenFiles(): ReadonlyMap<string, string> {
+    return state.writtenFiles;
+  },
+  /** DoD 9.47 — make `readDirectory` list these names in `folder`. */
+  setDirectory(folder: string, names: string[]): void {
+    state.directories.set(folder, [...names]);
+  },
+  /** Verifier round 9.48, W3 — make `readDirectory` reject for this folder. */
+  setDirectoryUnlistable(folder: string): void {
+    state.unlistable.add(folder);
+  },
+  /** DoD 9.47 — every save dialog shown. */
+  get saveDialogs(): { defaultUri: string | undefined; filters: Record<string, string[]> | undefined }[] {
+    return state.saveDialogs;
+  },
+  /** DoD 9.47 — the next save dialog returns this path, or `undefined` (cancel). */
+  answerSaveDialog(fsPath: string | undefined): void {
+    state.saveDialogAnswer = fsPath;
+  },
+  /** DoD 9.47 — every folder dialog shown. */
+  get openDialogs(): { canSelectFolders: boolean; canSelectFiles: boolean }[] {
+    return state.openDialogs;
+  },
+  /** DoD 9.47 — the next folder dialog returns this folder, or `undefined` (cancel). */
+  answerOpenDialog(fsPath: string | undefined): void {
+    state.openDialogAnswer = fsPath;
+  },
+  /** DoD 9.47 — what the clipboard holds. */
+  get clipboard(): string | undefined {
+    return state.clipboard;
   },
   get errorMessages(): string[] {
     return state.errorMessages;
@@ -500,6 +802,46 @@ export const workspace = {
   ): MockDisposable {
     return state.configurationEmitter.event(listener);
   },
+  /**
+   * `vscode.workspace.openTextDocument({ content, language })` — the UNTITLED
+   * overload only (DoD 9.40). A path or a Uri is refused here, because this
+   * extension opens nothing from disk and a test reaching for it has found a
+   * write-shaped path worth failing on.
+   */
+  /**
+   * `vscode.workspace.fs` — DoD 9.47. Two methods, both IN MEMORY:
+   * `writeFile` records the bytes by `fsPath` (decoded as UTF-8, which is
+   * what an export writes) and `readDirectory` lists what a test set with
+   * `mock.setDirectory` plus anything already written into that folder.
+   */
+  fs: {
+    writeFile(uri: Uri, content: Uint8Array): Promise<void> {
+      state.writtenFiles.set(uri.fsPath, Buffer.from(content).toString('utf8'));
+      return Promise.resolve();
+    },
+    readDirectory(uri: Uri): Promise<[string, number][]> {
+      if (state.unlistable.has(uri.fsPath)) {
+        return Promise.reject(new Error(`vscode-mock: ${uri.fsPath} cannot be listed`));
+      }
+      const names = new Set(state.directories.get(uri.fsPath) ?? []);
+      for (const path of state.writtenFiles.keys()) {
+        const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+        if (cut > 0 && path.slice(0, cut) === uri.fsPath) names.add(path.slice(cut + 1));
+      }
+      return Promise.resolve([...names].map((name) => [name, 1]));
+    },
+  },
+  openTextDocument(options: { content?: string; language?: string }): Promise<{ index: number }> {
+    if (typeof options !== 'object' || options === null || typeof options.content !== 'string') {
+      return Promise.reject(new Error('vscode-mock: only the untitled { content } overload is modelled'));
+    }
+    if (state.openTextDocumentFails) {
+      state.openTextDocumentFails = false;
+      return Promise.reject(new Error('vscode-mock: the editor refused the document'));
+    }
+    state.openedDocuments.push({ content: options.content, language: options.language, shown: false });
+    return Promise.resolve({ index: state.openedDocuments.length - 1 });
+  },
 };
 
 export const commands = {
@@ -523,14 +865,211 @@ export const commands = {
    * as asked-for.
    */
   executeCommand(command: string, ...args: unknown[]): Promise<unknown> {
+    // `setContext` is the editor's own built-in command (DoD 9.45): it sets
+    // a context key a manifest `when` clause reads, and it always exists.
+    // Recorded in `contexts` and NOT in `executed`: every test reading
+    // `executed` asks which commands the extension RAN, and a context key
+    // is state, not an act.
+    if (command === 'setContext') {
+      state.contexts.set(String(args[0]), args[1]);
+      return Promise.resolve(undefined);
+    }
     state.executed.push({ command, args });
     const handler = state.commands.get(command);
-    if (handler === undefined) return Promise.resolve(undefined);
-    return Promise.resolve(handler(...args));
+    if (handler === undefined) {
+      /*
+       * THE REAL EDITOR REJECTS AN UNKNOWN COMMAND — DoD 9.25.
+       *
+       * This resolved `undefined` for every unregistered id until then,
+       * which is how "Open Insights" reached a command Insights does not
+       * contribute and every test called it a pass. `workbench.*` ids exist
+       * only in the editor and are still answered, because they are the
+       * editor's own and a test can only assert they were ASKED FOR.
+       */
+      if (command.startsWith('workbench.')) return Promise.resolve(undefined);
+      return Promise.reject(new Error(`command '${command}' not found`));
+    }
+    try {
+      return Promise.resolve(handler(...args));
+    } catch (error) {
+      return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+    }
   },
 };
 
+/**
+ * `vscode.extensions`, enough of it for DoD 9.6.
+ *
+ * `getExtension` ANSWERS WITHOUT ACTIVATING, and the real one returns a
+ * record rather than a boolean, so the mock does too: a test that set a
+ * boolean here would be testing a shape the editor does not have.
+ */
+/**
+ * `vscode.env`, enough of it for DoD 9.7.
+ *
+ * `openExternal` RECORDS what it was handed rather than answering `true`
+ * and forgetting: a test that could only see "it was called" cannot tell a
+ * correct link from the first link, which is exactly the mutation that
+ * survived before this existed.
+ */
+export const env = {
+  /** DoD 9.47 — the Copy export. Holds the last text written. */
+  clipboard: {
+    writeText(text: string): Promise<void> {
+      state.clipboard = text;
+      return Promise.resolve();
+    },
+  },
+  openExternal(target: unknown): Promise<boolean> {
+    state.openedExternal.push(String((target as { toString(): string }).toString()));
+    return Promise.resolve(true);
+  },
+};
+
+export const extensions = {
+  /**
+   * A record shaped like `vscode.Extension`: `isActive`, `packageJSON` and
+   * `activate()` (DoD 9.25). Activating registers a handler for every command
+   * the manifest contributes — which is what the real editor's activation of
+   * a contributing extension ends in — and a command the manifest does NOT
+   * list stays unregistered, so `executeCommand` rejects it as the editor
+   * does.
+   */
+  getExtension(id: string):
+    | { id: string; isActive: boolean; packageJSON: unknown; activate(): Promise<void> }
+    | undefined {
+    if (!state.extensions.has(id)) return undefined;
+    const manifest = state.extensionManifests.get(id) ?? DEFAULT_EXTENSION_MANIFEST;
+    return {
+      id,
+      isActive: state.activeExtensions.has(id),
+      packageJSON: {
+        version: manifest.version,
+        contributes: { commands: manifest.commands.map((command) => ({ command })) },
+      },
+      activate: (): Promise<void> => {
+        if (manifest.failOnActivate !== undefined) {
+          return Promise.reject(new Error(manifest.failOnActivate));
+        }
+        if (!state.activeExtensions.has(id)) {
+          state.activeExtensions.add(id);
+          for (const command of manifest.commands) {
+            const failure = manifest.commandErrors?.[command];
+            state.commands.set(command, () => {
+              if (failure !== undefined) throw new Error(failure);
+              return undefined;
+            });
+          }
+        }
+        return Promise.resolve();
+      },
+    };
+  },
+};
+
+/* -------------------------------------------------------------------------- *
+ * TreeView — v0.9.0 DoD 9.14
+ * -------------------------------------------------------------------------- *
+ *
+ * The sidebar is a NATIVE tree now, so the mock has to carry the four
+ * primitives the provider touches: `TreeItem`, its two enums, `ThemeIcon`
+ * and `EventEmitter`. They are the real API's shapes and nothing more — a
+ * mock that invented a convenience here would let a test pass against a
+ * structure VS Code does not have, which is this repository's recorded
+ * "a harness comment describing what a fixture MEANS is an assertion with
+ * no test behind it".
+ */
+
+export const TreeItemCollapsibleState = {
+  None: 0,
+  Collapsed: 1,
+  Expanded: 2,
+} as const;
+
+export const TreeItemCheckboxState = {
+  Unchecked: 0,
+  Checked: 1,
+} as const;
+
+export class ThemeIcon {
+  constructor(readonly id: string) {}
+}
+
+export class TreeItem {
+  label: string;
+  collapsibleState: number;
+  id?: string;
+  description?: string;
+  iconPath?: ThemeIcon;
+  command?: { command: string; title: string } | undefined;
+  checkboxState?: number;
+
+  constructor(label: string, collapsibleState = TreeItemCollapsibleState.None) {
+    this.label = label;
+    this.collapsibleState = collapsibleState;
+  }
+}
+
+export class EventEmitter<T> {
+  readonly #emitter = new Emitter<T>();
+
+  readonly event = this.#emitter.event;
+
+  fire(value: T): void {
+    this.#emitter.fire(value);
+  }
+
+  dispose(): void {
+    this.#emitter.listeners.clear();
+  }
+}
+
+/** What `createTreeView` hands back, plus what a test needs to drive it. */
+export interface MockTreeView<T> {
+  readonly provider: {
+    getChildren(element?: T): T[];
+    getTreeItem(element: T): TreeItem;
+  };
+  readonly checkboxEmitter: Emitter<{ items: [T, number][] }>;
+  visible: boolean;
+  dispose(): void;
+}
+
 export const window = {
+  /**
+   * `createTreeView`, recording the provider so a test can walk the real one.
+   *
+   * The provider is NOT wrapped or adapted: a test reads the same object the
+   * editor would, so the adapter half of `AgentDeckTreeProvider` — the one
+   * that turns the model into `TreeItem`s — is driven rather than assumed.
+   */
+  createTreeView<T>(
+    viewId: string,
+    options: { treeDataProvider: { getChildren(element?: T): T[]; getTreeItem(element: T): TreeItem } },
+  ): MockTreeView<T> {
+    const view: MockTreeView<T> = {
+      provider: options.treeDataProvider,
+      checkboxEmitter: new Emitter<{ items: [T, number][] }>(),
+      visible: true,
+      dispose: () => {
+        state.treeViews.delete(viewId);
+      },
+    };
+    state.treeViews.set(viewId, view as MockTreeView<unknown>);
+    return view;
+  },
+  /**
+   * `showQuickPick`, answering `state.quickPickAnswer`.
+   *
+   * Recorded as well as answered: the tool filter's whole job is to offer the
+   * names this window holds, and a test that could only see the ANSWER could
+   * not tell a correct list from an empty one.
+   */
+  showQuickPick(items: readonly string[], options?: { placeHolder?: string }): Promise<string | undefined> {
+    state.quickPicks.push({ items: [...items], placeHolder: options?.placeHolder });
+    const answer = state.quickPickAnswer;
+    return Promise.resolve(answer !== undefined && items.includes(answer) ? answer : undefined);
+  },
   createWebviewPanel(
     viewType: string,
     title: string,
@@ -557,13 +1096,91 @@ export const window = {
   get tabGroups(): { all: unknown[] } {
     return { all: Array.from({ length: state.editorGroups }, () => ({})) };
   },
+  /**
+   * `createOutputChannel`, recording every line with the channel's name
+   * (DoD 9.25). The double had none until then, which is why the host kept
+   * the call at the one production site where no test reached it.
+   */
+  createOutputChannel(name: string): {
+    name: string;
+    appendLine(line: string): void;
+    show(preserveFocus?: boolean): void;
+    dispose(): void;
+  } {
+    // Creation and disposal are RECORDED, not just the lines: "one channel
+    // per window" is a claim about how many times this is called, and a
+    // line's channel NAME cannot tell one channel from two with one name
+    // (verifier round 9.26, mutations M1/M5b/M6 survived without this).
+    state.outputChannelsCreated.push(name);
+    return {
+      name,
+      appendLine: (line: string) => {
+        state.outputLines.push({ channel: name, line });
+      },
+      show: () => undefined,
+      dispose: () => {
+        state.outputChannelsDisposed.push(name);
+      },
+    };
+  },
+  /**
+   * `showSaveDialog` — DoD 9.47. Recorded with its default and filters, and
+   * answered with `mock.answerSaveDialog`; `undefined` is a cancel, the
+   * default and the honest one.
+   */
+  showSaveDialog(options?: { defaultUri?: Uri; filters?: Record<string, string[]> }): Promise<Uri | undefined> {
+    state.saveDialogs.push({ defaultUri: options?.defaultUri?.fsPath, filters: options?.filters });
+    const answer = state.saveDialogAnswer;
+    return Promise.resolve(answer === undefined ? undefined : Uri.file(answer));
+  },
+  /** `showOpenDialog` — DoD 9.47, the batch export's folder. Same rules. */
+  showOpenDialog(options?: { canSelectFolders?: boolean; canSelectFiles?: boolean }): Promise<Uri[] | undefined> {
+    state.openDialogs.push({
+      canSelectFolders: options?.canSelectFolders === true,
+      canSelectFiles: options?.canSelectFiles !== false,
+    });
+    const answer = state.openDialogAnswer;
+    return Promise.resolve(answer === undefined ? undefined : [Uri.file(answer)]);
+  },
+  /** `vscode.window.showTextDocument` for a document {@link workspace.openTextDocument} made. */
+  showTextDocument(document: { index: number }): Promise<undefined> {
+    const opened = state.openedDocuments[document.index];
+    if (opened === undefined) return Promise.reject(new Error('vscode-mock: no such document'));
+    opened.shown = true;
+    return Promise.resolve(undefined);
+  },
   showErrorMessage(message: string): Promise<undefined> {
     state.errorMessages.push(message);
     return Promise.resolve(undefined);
   },
-  showInformationMessage(message: string): Promise<undefined> {
+  /**
+   * Both overloads. The MODAL one is what DoD 9.7’s About entry calls:
+   * `showInformationMessage(message, { modal: true }, ...labels)`.
+   *
+   * It answers `state.modalAnswer`, which a test sets with
+   * `mock.answerModal(label)` — so a test can press a named button and then
+   * assert WHICH url was opened. Answering `undefined` blindly, which this
+   * did until v0.9.0, makes every modal an unanswered one and every branch
+   * below the answer unreachable.
+   */
+  showInformationMessage(
+    message: string,
+    optionsOrItem?: { modal?: boolean } | string,
+    ...rest: string[]
+  ): Promise<string | undefined> {
+    // BOTH real overloads: `(message, ...items)` and `(message, options,
+    // ...items)`. Reading the second argument as options unconditionally,
+    // as this did until DoD 9.23, silently drops the first button of the
+    // other form and answers `undefined` to a question the user was asked.
+    const items = typeof optionsOrItem === 'string' ? [optionsOrItem, ...rest] : rest;
     state.informationMessages.push(message);
-    return Promise.resolve(undefined);
+    const modal = typeof optionsOrItem === 'object' && optionsOrItem.modal === true;
+    state.informationPrompts.push({ message, items, modal });
+    if (items.length === 0) return Promise.resolve(undefined);
+    // Only an answer that is one of the offered labels, because the editor
+    // can only return one of them.
+    const answer = state.modalAnswer;
+    return Promise.resolve(answer !== undefined && items.includes(answer) ? answer : undefined);
   },
   /**
    * The modal overload, recorded rather than answered blindly.
@@ -635,10 +1252,15 @@ export function createExtensionContext(
   subscriptions: MockDisposable[];
   extensionUri: Uri;
   globalStorageUri: Uri;
+  extension: { packageJSON: unknown };
 } {
   return {
     subscriptions: [],
     extensionUri: Uri.file(extensionPath),
     globalStorageUri: Uri.file(globalStoragePath),
+    // The REAL manifest, read from the repository root the suite runs in —
+    // DoD 9.23's About footer names `packageJSON.version`, and a literal
+    // here would be a second copy of the version to keep in step.
+    extension: { packageJSON: JSON.parse(readFileSync('package.json', 'utf8')) as unknown },
   };
 }

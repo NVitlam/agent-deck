@@ -134,6 +134,7 @@ function recordingPanel(posted: HostToWebviewMessage[]): PanelSurface {
   const none = (): (() => void) => () => {};
   return {
     cspSource: "'self' https://*.vscode-cdn.net",
+    retainsContext: false,
     setHtml: () => {},
     asWebviewUri: (...segments: string[]) => `webview://ext/${segments.join('/')}`,
     postMessage: (message) => {

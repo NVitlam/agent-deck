@@ -1,5 +1,5 @@
 {
-  "statsSchemaVersion": 2,
+  "statsSchemaVersion": 3,
   "sessionId": "8c1910bb-9e45-40a3-ad0d-982df98ed71b",
   "engine": "cc",
   "projectSlug": "synthetic-stats",
@@ -30,6 +30,7 @@
   ],
   "loops": [],
   "churn": [],
+  "skills": [],
   "contextChurn": [],
   "compactions": [],
   "stalls": [],

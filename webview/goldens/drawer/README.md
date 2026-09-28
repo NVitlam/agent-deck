@@ -5,6 +5,7 @@
 | `follow.json` | hand-written from the user's rule (2026-09-05, v0.7.0 DoD 4.9b) | `webview/drawer.ts:followTarget` and `atGrowingEnd` — the drawer's follow-the-latest scroll target | `webview/drawer.test.ts` |
 | `header-2400.json` | hand-written from the flex arithmetic (v0.8.0 DoD 7.9) | `webview/inspector-header.ts:layoutHeader` at a 2400px panel — the header's seven field boxes, placed from `Inspector.svelte`'s own stylesheet | `webview/inspector-header.test.ts`, `webview/inspector.test.ts` |
 | `header-1200.json` | the same, at a 1200px panel | the same boxes, and which of them `.fields`' `overflow: hidden` cuts | the same two |
+| `header-700.json` | generated, v0.9.0 DoD 9.9 | the same boxes at a 700px panel — the NARROW case, where `.fields` wraps and every field takes a row of its own | the same two |
 
 **This golden is NOT a second implementation.** Nothing computed it but a
 person reading the rule: follow the latest call in whichever direction the
@@ -51,3 +52,17 @@ the fix leaves the 2400px table identical — `inspector-header.test.ts` asserts
 that rather than leaving it to be discovered. What the 2400px table pins is
 the other half: the gap, the seven minima, the font sizes and the field set,
 each of which moves its x positions.
+
+## v0.9.0 DoD 9.9 — three widths, and a generator
+
+All three tables are now written by `node scripts/gen-drawer-goldens.mjs`
+(`--check` compares and writes nothing). They were hand-written until 0.9.0;
+three widths is where that stops being reasonable, and a table written by hand
+from a model that resolves shrink PER ROW is a table nobody can check.
+
+`.fields` now declares `flex-wrap: wrap` and its own `row-gap`. That removes
+DoD 7.9’s stated cost: at 1200px `burn` was cut and `duration` was not drawn,
+and now the row breaks in two and every field is drawn. It does NOT make a cut
+impossible — at 700px the group is offered 180px, narrower than `sessionId`
+alone, and that one field is still cut on a row of its own. The 700 table is
+what pins that limit.

@@ -3,9 +3,6 @@ div
     div [degraded-banner] .banner data-reason="noHookEvents" role="status"
       span .text "Liveness is degraded — no hook events received. The tree below is still accurate; only \"running right now\" is unavailable. See the README for the hook block."
       button [degraded-dismiss] .dismiss type="button" "Dismiss"
-    div .chrome
-      button [stats-toggle] .toggle aria-pressed="false" type="button" "Stats"
-      button [view-toggle] .toggle aria-pressed="false" data-view-mode="list" type="button" "List"
     div .body
       nav [session-rail] .rail aria-label="Sessions"
         h2 .rail-title "Sessions"

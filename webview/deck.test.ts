@@ -66,7 +66,7 @@ import {
 import { EM_DASH, displayLiveness, formatCost, livenessTitle } from './format.js';
 import type { SessionSummary, Store } from './store.js';
 import { createStore } from './store.js';
-import { all, loadHarness, one, spawnBundle } from './testkit.js';
+import { all, loadHarness, one, spawnBundle, viewControls } from './testkit.js';
 import type { WebviewHarness } from './testkit.js';
 import { agent, liveSession, settledSession, tool, unsupportedSession } from './testdata.js';
 
@@ -199,6 +199,7 @@ let panelHarness: WebviewHarness;
 /** The bundled JavaScript, kept so the injected stylesheet can be asserted on. */
 let bundle = '';
 /** The two component sources, read once, for the source-level checks. */
+let stylesheet = '';
 let componentSources: { path: string; text: string }[] = [];
 
 beforeAll(async () => {
@@ -216,6 +217,10 @@ beforeAll(async () => {
     path,
     text: fs.readFileSync(path, 'utf8'),
   }));
+  // The BUILT stylesheet: what VS Code loads. v0.9.0 DoD 9.14's state
+  // grammar is a CSS question, and `bundle` carries the CSS as an escaped
+  // string inside a JS artifact.
+  stylesheet = fs.readFileSync('dist/webview/main.css', 'utf8');
 }, 120_000);
 
 interface Mounted {
@@ -452,19 +457,28 @@ describe('the empty deck', () => {
   it('D4 boundary: copy that IS about one engine still names it', () => {
     /*
      * The other half, and it is what keeps the rule above from being read as
-     * "never write an engine name in the webview". A filter chip and a card's
-     * tag are statements about one engine, so naming it is the whole point;
-     * a rule that stripped them would make the deck unreadable in the name of
-     * making one line correct.
+     * "never write an engine name in the webview". A CARD'S TAG is a
+     * statement about one engine, so naming it is the whole point; a rule
+     * that stripped it would make the deck unreadable in the name of making
+     * one line correct.
      *
-     * This also fails if someone "fixes" D4 by deleting the chips.
+     * The filter chips were the other example until v0.9.0 DoD 9.14 — they
+     * are View ▸ Filters ▸ Engines entries now, and `controls.ts` still
+     * names all three there, which `controls.test.ts` reads.
      */
-    const container = render({ sessions: [summary('s-1')] });
-    const chips = all(container, 'deck-engine-chip')
+    const container = render({
+      sessions: [
+        summary('s-1'),
+        summary('s-2', { engine: 'opencode' }),
+        summary('s-3', { engine: 'codex' }),
+      ],
+    });
+    const tags = all(container, 'deck-cell-engine')
       .map((el) => el.textContent ?? '')
       .join(' ');
-    for (const name of ['Claude Code', 'OpenCode', 'Codex']) {
-      expect(chips, `the ${name} filter chip must still be named`).toContain(name);
+    expect(tags.length, 'no engine tag rendered at all').toBeGreaterThan(0);
+    for (const tag of ['CC', 'OC', 'CX']) {
+      expect(tags, `the ${tag} card tag must still be named`).toContain(tag);
     }
   });
 
@@ -523,9 +537,7 @@ describe('placement comes from deckLayout(sessions, layout, sort, viewportW)', (
 
   for (const layout of ['list', 'grid', 'lanes'] as const) {
     it(`renders the ${layout} layout at the ${layout} coordinates`, () => {
-      const container = render({ sessions: rows });
-      const index = { list: '1', grid: '2', lanes: '3' }[layout];
-      key(index);
+      const container = render({ sessions: rows, layoutMode: layout });
       expect(one(container, TESTID.deck).dataset['layout']).toBe(layout);
       const expected = expectPlacements(rows, layout);
       for (const placement of expected) {
@@ -538,8 +550,7 @@ describe('placement comes from deckLayout(sessions, layout, sort, viewportW)', (
 
   for (const sort of ['live', 'recent', 'engine'] as const) {
     it(`renders the ${sort} sort in the ${sort} order`, () => {
-      const container = render({ sessions: rows });
-      key({ live: 'l', recent: 'r', engine: 'e' }[sort]);
+      const container = render({ sessions: rows, sortMode: sort });
       expect(one(container, TESTID.deck).dataset['sort']).toBe(sort);
       expect(cells(container).map((c) => c.dataset['sessionId'])).toStrictEqual(
         expectPlacements(rows, DEFAULT_DECK_LAYOUT, sort).map((p) => p.id),
@@ -1171,118 +1182,48 @@ describe('the engine filter (DoD 7.7)', () => {
     return all(root, 'deck-engine-chip');
   }
 
-  it('offers exactly four chips, in the design’s order, with All active', () => {
-    // Three as of Phase 7, four from v0.6.0 Phase 3's Codex chip — the
-    // widening this describe block records.
+  it('carries no chip at all, and states the filter it was given', () => {
+    // v0.9.0 DoD 9.14: the four chips and their counts are
+    // View ▸ Filters ▸ Engines. What the deck does with the VALUE is
+    // unchanged, and that is what the rest of this block measures.
     const container = render({ sessions: rows });
-    expect(chips(container).map((c) => c.dataset['engine'])).toStrictEqual([
-      'all',
-      'cc',
-      'oc',
-      'cx',
-    ]);
-    expect(chips(container).map((c) => c.dataset['active'])).toStrictEqual([
-      'true',
-      'false',
-      'false',
-      'false',
-    ]);
+    expect(chips(container)).toHaveLength(0);
+    expect(one(container, TESTID.deck).dataset['engineFilter']).toBe('all');
     expect(DEFAULT_ENGINE_FILTER).toBe('all');
   });
 
-  it('badges each chip with the number of sessions that engine has', () => {
-    const container = render({ sessions: rows });
-    expect(chips(container).map((c) => c.dataset['count'])).toStrictEqual(['4', '2', '1', '1']);
-    expect(chips(container).map((c) => c.textContent)).toStrictEqual([
-      'All4',
-      'Claude Code2',
-      'OpenCode1',
-      'Codex1',
-    ]);
-  });
-
-  it('reports a chip click, and NEVER changes the value on its own', () => {
-    const asked: string[] = [];
-    const container = render({
-      sessions: rows,
-      onenginefilter: (filter: string) => asked.push(filter),
-    });
-    const cc = chips(container).find((c) => c.dataset['engine'] === 'cc');
-    if (cc === undefined) throw new Error('no cc chip');
-    click(cc);
-    expect(asked).toStrictEqual(['cc']);
-    // Nothing moved: the store has not answered, so the deck still shows what
-    // it was given. A component holding its own copy would read 'cc' here and
-    // would then be a second source of truth for the same value.
-    expect(one(container, TESTID.deck).dataset['engineFilter']).toBe('all');
-    expect(cells(container)).toHaveLength(4);
-  });
-
-  it('is SINGLE-SELECT: the value it is given activates exactly one chip', () => {
-    const container = render({ sessions: rows, engineFilter: 'cc' });
-    expect(chips(container).map((c) => c.dataset['active'])).toStrictEqual([
-      'false',
-      'true',
-      'false',
-      'false',
-    ]);
-    expect(chips(container).filter((c) => c.dataset['active'] === 'true')).toHaveLength(1);
-    expect(chips(container).map((c) => c.getAttribute('aria-pressed'))).toStrictEqual([
-      'false',
-      'true',
-      'false',
-      'false',
-    ]);
-
-    // The fourth chip activates exactly as the first three do.
-    const cx = render({ sessions: rows, engineFilter: 'cx' });
-    expect(chips(cx).map((c) => c.dataset['active'])).toStrictEqual([
-      'false',
-      'false',
-      'false',
-      'true',
-    ]);
-  });
-
-  it('shows only that engine’s cards, and still says how many there are', () => {
+  it('shows only that engine’s cards — every one of the four values', () => {
     const cc = render({ sessions: rows, engineFilter: 'cc' });
     expect(cells(cc).map((c) => c.dataset['sessionId'])).toStrictEqual(['s-cc-1', 's-cc-2']);
-    const count = one(cc, 'deck-count');
-    expect(count.dataset['shown']).toBe('2');
-    expect(count.dataset['total']).toBe('4');
-    expect(count.textContent).toBe('2 of 4');
+    expect(one(cc, TESTID.deck).dataset['engineFilter']).toBe('cc');
 
     const oc = render({ sessions: rows, engineFilter: 'oc' });
     expect(cells(oc).map((c) => c.dataset['sessionId'])).toStrictEqual(['s-oc-1']);
-    expect(one(oc, 'deck-count').textContent).toBe('1 of 4');
 
     const cx = render({ sessions: rows, engineFilter: 'cx' });
     expect(cells(cx).map((c) => c.dataset['sessionId'])).toStrictEqual(['s-cx-1']);
-    expect(one(cx, 'deck-count').textContent).toBe('1 of 4');
 
+    // EVERY arm, including `all`: a component that ignored the prop would
+    // pass the one value that happens to keep everything.
     const all_ = render({ sessions: rows, engineFilter: 'all' });
     expect(cells(all_)).toHaveLength(4);
-    expect(one(all_, 'deck-count').textContent).toBe('4');
-    // The badges are counted off the FULL list, so every chip still says what
-    // it would show even while another chip is the active one.
-    expect(chips(cc).map((c) => c.dataset['count'])).toStrictEqual(['4', '2', '1', '1']);
   });
 
-  it('answers A C O X by reporting, and steals nothing else', () => {
-    const asked: string[] = [];
-    render({ sessions: rows, onenginefilter: (filter: string) => asked.push(filter) });
-    key('c');
-    key('o');
-    key('x');
-    key('a');
-    expect(asked).toStrictEqual(['cc', 'oc', 'cx', 'all']);
+  it('answers A C O X with NOTHING: the shortcuts are the editor’s now', () => {
+    // v0.9.0 DoD 9.14, ruling 1: the shortcuts stay, as `package.json`
+    // keybindings on `agentDeck.filter.engines.*`. The component reports
+    // nothing, because there is nothing for it to report to — the value is
+    // the host's and the command sets it directly.
+    const container = render({ sessions: rows, engineFilter: 'cc' });
+    for (const k of ['c', 'o', 'x', 'a']) key(k);
+    expect(one(container, TESTID.deck).dataset['engineFilter']).toBe('cc');
   });
 
   it('sends the host NOTHING and asks for no fit: it is view state only', () => {
-    // Filtering does not call fit; only re-rooting does. And a filter is a
-    // webview-local decision — no message exists for it in either direction.
-    // `onenginefilter` reaches the STORE, never the host: `store.test.ts`'s
-    // "sends the host NOTHING for either filter" is the other half.
+    // Filtering does not call fit; only re-rooting does. And the renderer
+    // reports nothing about it in either direction — v0.9.0 DoD 9.14 leaves
+    // it with no message that could. `store.test.ts`'s "sends the host
+    // NOTHING for either filter" is the other half.
     const fits: unknown[] = [];
     const zooms: unknown[] = [];
     const entered: string[] = [];
@@ -1310,100 +1251,69 @@ describe('the engine filter (DoD 7.7)', () => {
 describe('the control bar', () => {
   const rows = [summary('s-1'), summary('s-2', { engine: 'opencode' })];
 
-  it('is a fixed 40px row that is not inside the transformed stage', () => {
+  it('is GONE: spec Amendment 2026-09-20 leaves the field alone with its cards', () => {
+    // v0.9.0 DoD 9.14. The bar carried four engine chips with counts, three
+    // layout segments, three sort segments, the "n of m" count and Reset
+    // view. `webview/chrome.test.ts` walks every surface for the general
+    // rule; this is the deck's own row.
     const container = render({ sessions: rows });
-    const bar = one(container, 'deck-bar');
-    expect(bar.getAttribute('style')?.replace(/\s+/g, '')).toContain('height:40px');
-    expect(bar.closest(`[data-testid="${TESTID.deckStage}"]`)).toBeNull();
-    expect(bar.closest('svg')).toBeNull();
+    for (const gone of [
+      'deck-bar',
+      'deck-engine-chip',
+      'deck-layout-option',
+      'deck-sort-option',
+      'deck-count',
+      'deck-reset',
+    ]) {
+      expect(all(container, gone), gone).toHaveLength(0);
+    }
+    // The FIELD is still there, which is what makes the emptiness above a
+    // statement about the bar rather than about a deck that failed to draw.
+    expect(container.querySelector('svg.field')).not.toBeNull();
+    expect(cells(container).length).toBeGreaterThan(0);
   });
 
-  it('defaults to Grid, Live first and All', () => {
+  it('renders the layout and the sort it is GIVEN, all three of each', () => {
+    for (const layoutMode of ['list', 'grid', 'lanes'] as const) {
+      const container = render({ sessions: rows, layoutMode });
+      expect(one(container, TESTID.deck).dataset['layout'], layoutMode).toBe(layoutMode);
+    }
+    for (const sortMode of ['live', 'recent', 'engine'] as const) {
+      const container = render({ sessions: rows, sortMode });
+      expect(one(container, TESTID.deck).dataset['sort'], sortMode).toBe(sortMode);
+    }
+  });
+
+  it('steals NO keystroke at all: the shortcuts are the editor’s now', () => {
+    /*
+     * "Keyboard shortcuts stay" is ruling 1's own clause, and they do — as
+     * `package.json` keybindings on the same commands the View submenu runs,
+     * scoped by `activeWebviewPanelId`. `manifest.test.ts` pins the ten.
+     *
+     * What this asserts is the other half: the COMPONENT answers none of
+     * them, so there is no second path to a value it no longer owns — and no
+     * chance of stealing a keystroke from a field, which is what the
+     * component's own guard used to be for.
+     */
     const container = render({ sessions: rows });
     const deck = one(container, TESTID.deck);
+    const before = [deck.dataset['layout'], deck.dataset['sort'], deck.dataset['engineFilter']];
+    for (const k of ['1', '2', '3', 'l', 'r', 'e', 'a', 'c', 'o', 'x']) key(k);
     expect([deck.dataset['layout'], deck.dataset['sort'], deck.dataset['engineFilter']]).toStrictEqual(
-      [DEFAULT_DECK_LAYOUT, DEFAULT_DECK_SORT, DEFAULT_ENGINE_FILTER],
+      before,
     );
-    expect([deck.dataset['layout'], deck.dataset['sort'], deck.dataset['engineFilter']]).toStrictEqual(
-      ['grid', 'live', 'all'],
-    );
-  });
-
-  it('offers the three layouts and the three sorts, single-select each', () => {
-    const container = render({ sessions: rows });
-    expect(all(container, 'deck-layout-option').map((b) => b.dataset['layout'])).toStrictEqual([
-      'list',
-      'grid',
-      'lanes',
-    ]);
-    expect(all(container, 'deck-sort-option').map((b) => b.dataset['sort'])).toStrictEqual([
-      'live',
-      'recent',
-      'engine',
-    ]);
-    const lanes = all(container, 'deck-layout-option')[2];
-    if (lanes === undefined) throw new Error('no lanes option');
-    click(lanes);
-    expect(
-      all(container, 'deck-layout-option').filter((b) => b.dataset['active'] === 'true'),
-    ).toHaveLength(1);
-    expect(one(container, TESTID.deck).dataset['layout']).toBe('lanes');
-  });
-
-  // The engine keys are NOT in this table any more: they report through
-  // `onenginefilter` rather than moving an attribute, and
-  // "answers A C O by reporting" above is their test. Putting them here with
-  // an attribute that no longer moves would have made this loop assert
-  // `'all', 'all', 'all'` — three passes, nothing measured.
-  for (const [name, keys, attribute, expected] of [
-    ['layout', ['1', '2', '3'], 'layout', ['list', 'grid', 'lanes']],
-    ['sort', ['l', 'r', 'e'], 'sort', ['live', 'recent', 'engine']],
-  ] as const) {
-    it(`answers the ${name} keys ${keys.join(' ').toUpperCase()}`, () => {
-      const container = render({ sessions: rows });
-      const deck = one(container, TESTID.deck);
-      const seen: string[] = [];
-      for (const k of keys) {
-        key(k);
-        seen.push(deck.dataset[attribute] ?? '');
-      }
-      expect(seen).toStrictEqual([...expected]);
-    });
-  }
-
-  it('never steals a keystroke from a field the user is typing into', () => {
-    const container = render({ sessions: rows });
-    const input = document.createElement('input');
-    document.body.appendChild(input);
-    harness.flushSync(() => {
-      input.dispatchEvent(
-        new KeyboardEvent('keydown', { key: '1', bubbles: true, cancelable: true }),
-      );
-    });
-    expect(one(container, TESTID.deck).dataset['layout']).toBe('grid');
-    input.remove();
   });
 
   it('persists NOTHING: a fresh mount is back at the defaults (G7)', () => {
-    // LAYOUT AND SORT ONLY. They are this component's `$state` and a fresh
-    // mount is genuinely back at the design defaults — no storage, nothing
-    // carried between mounts.
-    //
-    // The engine filter is deliberately not asserted here any more, and the
-    // difference is the whole of DoD 7.7's fix. It is store state now, so it
-    // SURVIVES a remount, which is exactly what "persists nothing" must not be
-    // read to forbid: surviving an unmount inside one panel session is not
-    // persistence. Persistence would be a setting, `workspaceState` or
-    // `localStorage`, and the next test asserts the bundle contains none of
-    // the three.
-    const first = render({ sessions: rows });
-    key('3');
-    key('r');
-    expect(one(first, TESTID.deck).dataset['layout']).toBe('lanes');
-    expect(one(first, TESTID.deck).dataset['sort']).toBe('recent');
-    const second = render({ sessions: rows });
-    const deck = one(second, TESTID.deck);
-    expect([deck.dataset['layout'], deck.dataset['sort']]).toStrictEqual(['grid', 'live']);
+    // The defaults are the props' defaults now, which is the same claim: no
+    // storage, nothing carried between mounts. The values themselves live in
+    // the HOST for this window and die with it — surviving an unmount inside
+    // one panel session is not persistence, and DoD 7.7's engine filter is
+    // the case that made the distinction.
+    const deck = one(render({ sessions: rows }), TESTID.deck);
+    expect([deck.dataset['layout'], deck.dataset['sort'], deck.dataset['engineFilter']]).toStrictEqual(
+      [DEFAULT_DECK_LAYOUT, DEFAULT_DECK_SORT, DEFAULT_ENGINE_FILTER],
+    );
   });
 
   it('writes to no storage at all — the bundle contains no persistence API', () => {
@@ -2165,21 +2075,15 @@ describe('through the mounted panel (DoD 7.4, the survival half)', () => {
       });
     });
 
-    const chipFor = (engine: string): HTMLElement => {
-      const found = all(p.container, 'deck-engine-chip').find(
-        (c) => c.dataset['engine'] === engine,
-      );
-      if (found === undefined) throw new Error(`no ${engine} chip`);
-      return found;
-    };
     const shown = (): string[] =>
       all(p.container, TESTID.deckBlob).map((c) => c.dataset['sessionId'] ?? '');
 
     expect(shown().sort()).toStrictEqual(['session-live', 'session-oc']);
 
-    // Pick OpenCode, through the real chip.
+    // Pick OpenCode. v0.9.0 DoD 9.14: through the HOST's message, because
+    // the chip is a View ▸ Filters ▸ Engines entry now.
     panelHarness.flushSync(() => {
-      chipFor('oc').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      p.store.handleMessage(viewControls({ engineFilter: 'oc' }));
     });
     expect(p.store.getView().engineFilter).toBe('oc');
     expect(one(p.container, TESTID.deck).dataset['engineFilter']).toBe('oc');
@@ -2194,13 +2098,12 @@ describe('through the mounted panel (DoD 7.4, the survival half)', () => {
       p.store.escape();
     });
 
-    // Back at the deck. Before the fix this read 'all' and showed both cards.
+    // Back at the deck. Before the fix this read 'all' and showed both cards,
+    // and the fix is the same one: the value is the STORE's, so a remount
+    // cannot lose it. v0.9.0 moves its owner one step further out, to the
+    // host, which is what keeps the sidebar's tick agreeing with the field.
     expect(one(p.container, TESTID.deck).dataset['engineFilter']).toBe('oc');
-    expect(chipFor('oc').dataset['active']).toBe('true');
-    expect(chipFor('all').dataset['active']).toBe('false');
     expect(shown()).toStrictEqual(['session-oc']);
-    // The count chip still tells the truth about what exists.
-    expect(one(p.container, 'deck-count').textContent).toBe('1 of 2');
   });
 
   it('DoD 7.7: the two filters are independent, and both survive the trip', () => {
@@ -2220,8 +2123,7 @@ describe('through the mounted panel (DoD 7.4, the survival half)', () => {
       });
     });
     panelHarness.flushSync(() => {
-      p.store.setEngineFilter('oc');
-      p.store.setLivenessFilter('idle');
+      p.store.handleMessage(viewControls({ engineFilter: 'oc', livenessFilter: 'idle' }));
     });
     expect(all(p.container, TESTID.deckBlob).map((c) => c.dataset['sessionId'])).toStrictEqual([
       'session-oc-idle',
@@ -2242,11 +2144,10 @@ describe('through the mounted panel (DoD 7.4, the survival half)', () => {
     expect(all(p.container, TESTID.deckBlob).map((c) => c.dataset['sessionId'])).toStrictEqual([
       'session-oc-idle',
     ]);
-    // And the liveness chip row, which App owns, agrees with the store.
-    const activeLiveness = all(p.container, TESTID.filterChip)
-      .filter((c) => c.dataset['active'] === 'true')
-      .map((c) => c.dataset['filter']);
-    expect(activeLiveness).toStrictEqual(['idle']);
+    // The chip row was here until v0.9.0 DoD 9.14; the filters are View
+    // entries now. What survives the session visit is the VALUE, which is the
+    // property this test was always about — and it survives because the host
+    // holds it, not because a component remembered.
   });
 
   it('routes a real wheel gesture through zoomAbout at the deck limits', () => {
@@ -2303,17 +2204,101 @@ describe('every contract class the deck applies also carries style', () => {
   }
 });
 
+describe('the state grammar is on the ITEM — v0.9.0 DoD 9.14', () => {
+  /*
+   * Spec `Amendment 2026-09-20`: "Session state (live / idle / ended) is
+   * shown on each item by colour and contrast (warm/cool + light/dark, never
+   * hue alone), so no legend exists."
+   *
+   * The legend used to carry the grammar and it is gone, so the card has to.
+   * THE CHECK IS ON THE STYLESHEET, because jsdom computes no layout and no
+   * cascade — it cannot tell a reader what a card looks like. What it CAN do
+   * is prove that the three states are given different declarations, on more
+   * than one property, which is what "never hue alone" means in CSS.
+   *
+   * The own-eyes pass is still what says whether they read apart. This says
+   * they cannot have been collapsed onto one rule without somebody noticing.
+   */
+  /*
+   * Read out of the BUILT STYLESHEET, not out of the harness bundle.
+   *
+   * `bundle` here is the JS artifact with the CSS injected as a string, so
+   * its selectors are escaped and its whitespace is the source's; a regex
+   * over it matched the wrong block three times and reported one rule where
+   * there are three. `dist/webview/main.css` is what VS Code loads, its
+   * selectors are Svelte's scoped, minified form, and reading the artifact
+   * is this repository's own rule for questions about what shipped.
+   */
+  const ruleFor = (state: string): string => {
+    /*
+     * NO REGEX. The selector has to be spelled with brackets, dots and
+     * braces in it, and every one of them is a metacharacter — the first
+     * three drafts of this each lost a backslash on the way into the file
+     * and silently became a character class, which matched the wrong block
+     * and reported one rule where there are three. `indexOf` cannot.
+     */
+    const marker = '[data-state=' + state + ']';
+    let at = -1;
+    for (;;) {
+      at = stylesheet.indexOf(marker, at + 1);
+      if (at === -1) throw new Error('no .border rule for ' + state);
+      const open = stylesheet.indexOf('{', at);
+      if (open === -1) throw new Error('no rule body for ' + state);
+      if (!stylesheet.slice(at, open).includes('.border')) continue;
+      return stylesheet.slice(open + 1, stylesheet.indexOf('}', open)).trim();
+    }
+  };
+
+  it('gives live, idle and ended three DIFFERENT declarations', () => {
+    const rules = ['live', 'idle', 'ended'].map(ruleFor);
+    expect(new Set(rules).size, rules.join(' | ')).toBe(3);
+  });
+
+  it('separates them on WEIGHT and on FILL, not on hue alone', () => {
+    // Two channels, asserted as two properties: a theme change that made the
+    // three hues identical would leave the card readable, and a change that
+    // collapsed the weights onto one value would not.
+    for (const state of ['live', 'idle', 'ended']) {
+      const rule = ruleFor(state);
+      expect(rule, `${state}: no stroke channel`).toMatch(/stroke(-width|-opacity)?:/);
+      expect(rule, `${state}: no fill channel`).toContain('fill-opacity:');
+    }
+    const weights = ['live', 'idle', 'ended'].map(
+      (state) => /stroke-width: *([\d.]+)/.exec(ruleFor(state))?.[1] ?? '',
+    );
+    expect(new Set(weights).size, weights.join('/')).toBe(3);
+    const fills = ['live', 'idle', 'ended'].map(
+      (state) => /fill-opacity: *([\d.]+)/.exec(ruleFor(state))?.[1] ?? '',
+    );
+    expect(new Set(fills).size, fills.join('/')).toBe(3);
+  });
+
+  it('and the WORD is still on the card, which is the channel that survives greyscale', () => {
+    const container = render({
+      sessions: [
+        summary('s-live', { liveness: 'live' }),
+        summary('s-idle', { liveness: 'idle' }),
+        summary('s-ended', { liveness: 'ended' }),
+      ],
+    });
+    const words = all(container, 'deck-cell-status').map((el) => el.textContent?.trim() ?? '');
+    expect(words.sort()).toStrictEqual(['ended', 'idle', 'live']);
+    // ...and the legend that used to carry the grammar is gone.
+    expect(all(container, 'legend')).toHaveLength(0);
+  });
+});
+
 describe('the testids this package spells twice', () => {
   // `canvas-contract.ts` holds every name that crosses a package boundary and
   // is not this package's file to edit. These names have ONE owner — the deck
   // — so they live in the component, which means this file spells them a
   // second time. That seam is closed by assertion rather than by care.
+  // v0.9.0 DoD 9.14 removed five of these — `deck-bar`,
+  // `deck-engine-chip`, `deck-layout-option`, `deck-sort-option` and
+  // `deck-count` — with the control bar. `the control bar` above asserts
+  // their absence in the rendered DOM and `chrome.test.ts` asserts it in the
+  // bundle, so the seam this loop closes is smaller and still closed.
   for (const testId of [
-    'deck-bar',
-    'deck-engine-chip',
-    'deck-layout-option',
-    'deck-sort-option',
-    'deck-count',
     'deck-waiting',
     'deck-cell-engine',
     'deck-cell-label',

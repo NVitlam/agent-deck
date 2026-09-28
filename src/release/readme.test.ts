@@ -73,7 +73,14 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { SIDEBAR_MENU } from '../sidebar/menu.js';
+import {
+  CONTROL_COMMANDS,
+  CONTROL_GROUPS,
+  CONTROL_KEYBINDINGS,
+  CONTROL_SECTIONS,
+  MENU_COMMANDS as SIDEBAR_MENU,
+} from '../view/controls.js';
+import { INSIGHTS_PAGE_URL } from '../extension.js';
 import { LOOP_MIN, SPIKE_TOKENS } from '../stats/constants.js';
 import { costOfSeries, parsePricing } from '../stats/pricing.js';
 import type { StatsRecord } from '../stats/schema.js';
@@ -248,7 +255,7 @@ const RELEASE_IMAGES: readonly string[] = [
   // Committed as a placeholder the user replaces with a capture; the
   // package-audit leg of `vsix.test.ts` refuses to package the placeholder.
   'media/sidebar.png',
-  // v0.8.0 DoD 7.D: the 7.12 capture of the sidebar's Tweaks tab, unedited.
+  // v0.8.0 DoD 7.D: the 7.12 capture of the sidebar's four settings, unedited.
   'media/sidebar-tweaks.png',
   // SEVEN SINCE v0.7.1 (DoD 6.D.4): the Stats view's Tokens part with the
   // telemetry cost and its label, linked from the telemetry section: the 6.9
@@ -480,6 +487,107 @@ const LIVE_SETTINGS: HookSettings | null = existsSync(LIVE_PATH)
   : null;
 
 describe('README exists and ships clean', () => {
+  it('documents API v2 — the provider contract, and that provider data is never executed', () => {
+    /*
+     * v0.9.0 DoD 9.33. The round-3 test here pinned two Insights COMMAND ids
+     * in the README as a second anchor; spec `Amendment 2026-09-21 — One
+     * window` removed the command relationship entirely, so those ids are
+     * gone from the product and must be gone from the page too. What the
+     * README states instead is the API a provider registers through, and a
+     * page that shipped without it would describe a door nobody can find.
+     */
+    for (const member of [
+      'registerInsightsProvider',
+      'providerVersion',
+      'getLatest',
+      'listRuns',
+      'onDidChange',
+      'FindingSetView',
+      'RunSummary',
+    ]) {
+      expect(README, `the README does not name ${member}`).toContain(`\`${member}\``);
+    }
+    expect(README).toContain('`apiVersion` is `2`');
+    // The trust sentence, in BOTH shipped documents that make trust claims.
+    for (const [name, text] of [
+      ['README.md', README],
+      ['SECURITY.md', readText('SECURITY.md')],
+    ] as const) {
+      expect(text.replace(/\s+/g, ' '), name).toContain(
+        'provider data is plain JSON, checked field by field, and never executed',
+      );
+    }
+    // The ids of the command relationship this release removed are gone.
+    for (const gone of ['agentDeckInsights.open', 'agentDeckInsights.run', 'agentDeck.insights.']) {
+      expect(README, gone).not.toContain(gone);
+    }
+  });
+
+  it('9.42: the widened contract is documented, and the numbers-only claim is gone from EVERY shipped document', () => {
+    /*
+     * `Amendment 2026-09-22 — Provider contract v1 widened`. Until 9.40 three
+     * shipped documents promised that no provider text is shown. That promise
+     * is now false, and a false trust claim is the worst sentence a release
+     * can carry — so the claim is scanned for across README, SECURITY and the
+     * CHANGELOG's 0.9.0 block, each pattern paired below with the sentence
+     * that really shipped (the vacuity control).
+     */
+    const changelog = readText('CHANGELOG.md');
+    const block = changelog.slice(changelog.indexOf('## 0.9.0'), changelog.indexOf('\n## ', changelog.indexOf('## 0.9.0') + 1));
+    expect(block.length).toBeGreaterThan(200);
+    // Verifier round 9.43, W7: the site pages too, and every text read with
+    // its curly apostrophes straightened, so `Deck’s` cannot slip a pattern.
+    const shipped: readonly [string, string][] = [
+      ['README.md', README],
+      ['SECURITY.md', readText('SECURITY.md')],
+      ['CHANGELOG.md 0.9.0', block],
+      ['site/index.html', readText('site/index.html')],
+      ['site/insights.html', readText('site/insights.html')],
+      ['site/thanks.html', readText('site/thanks.html')],
+    ];
+    const STALE: readonly [RegExp, string][] = [
+      [/there is no text field/i, 'There is no text field: every word the Insights surface shows'],
+      [/every word (?:the insights surface shows )?about (?:a finding|it) is agent deck'?s own/i, 'every word about it is Agent Deck\'s own'],
+      [/no prose from a provider is shown/i, 'No prose from a provider is shown'],
+      [/the only provider strings (?:shown|displayed)/i, 'the only provider strings displayed are its name'],
+      [/a finding is a kind, a confidence and numbers/i, 'a finding is a kind, a confidence and numbers'],
+      [/\*\*numeric evidence\*\*/i, 'a **confidence** (low, medium, high) and **numeric evidence**'],
+      [
+        /provider(?:'s)? (?:text|prose|words?) (?:is|are) (?:never|not) (?:shown|displayed|rendered)/i,
+        'provider text is never displayed',
+      ],
+    ];
+    const plain = (text: string): string => text.replace(/[‘’]/g, "'").replace(/\s+/g, ' ');
+    // The curly form the verifier planted (V28) is caught through `plain`.
+    expect(STALE[1]?.[0].test(plain('every word about it is Agent Deck’s own'))).toBe(true);
+    for (const [pattern, sentence] of STALE) {
+      expect(pattern.test(sentence), `the control for ${String(pattern)} does not match what shipped`).toBe(true);
+      for (const [name, text] of shipped) {
+        expect(pattern.test(plain(text)), `${name} still says ${String(pattern)}`).toBe(false);
+      }
+    }
+    // What is true now, stated where an extension author and a security reader look.
+    const flat = README.replace(/\s+/g, ' ');
+    for (const member of ['getRawOutput', 'sinceLastRun', 'refusal', 'agentKind']) {
+      expect(README, member).toContain(member);
+    }
+    expect(flat).toContain('dropped and counted, never shortened');
+    // Rulings of 2026-09-22 (round 5): the set names its own run, and a refused
+    // run with no raw output says so verbatim. The createdAt join is gone.
+    expect(README).toMatch(/FindingSetView \{\s+runId: string;/);
+    expect(flat).toContain('No raw output for this run.');
+    // Round 5b: the resolved kinds and the empty detail are documented.
+    expect(README).toMatch(/resolvedKinds: string\[\];/);
+    expect(flat).toContain('No longer reported:');
+    expect(flat).toContain("detail may be ''");
+    expect(flat).not.toMatch(/same `createdAt`|has the set's `createdAt`/);
+    expect(flat).toContain('estimated by Claude Code');
+    const security = readText('SECURITY.md').replace(/\s+/g, ' ');
+    for (const fact of ['at most 64 characters', 'at most 1,024', 'at most 2,000', 'never shortened', 'bidirectional override']) {
+      expect(security, fact).toContain(fact);
+    }
+  });
+
   it('is present at the repository root and is not empty', () => {
     expect(README.length).toBeGreaterThan(0);
     expect(README.trimStart().startsWith('# Agent Deck')).toBe(true);
@@ -1820,6 +1928,128 @@ const SUPERSEDED_CONTROLS = [
   'Do not build drift tolerance into the fingerprint.',
 ];
 
+describe.skipIf(SPEC === null)('the 2026-09-20 amendments name what shipped', () => {
+  /*
+   * v0.9.0 DoD 9.17. `PLAN.md`'s delta calls these amendments "the law", and
+   * a verifier round found the Clean-windows table saying
+   * `Sort Live first/Recent` while the build shipped three sorts — and naming
+   * neither Statistics nor Inspector. NOTHING BOUND THE TABLE TO THE CODE, so
+   * the two could disagree indefinitely. This is the binding.
+   *
+   * TWO SLICES, because there are two amendments and they govern different
+   * things. `Clean windows` still owns the content-only law, the zoom rule
+   * and the keyboard shortcuts; `Sidebar shape` supersedes its control table
+   * and is therefore what the command and group labels are held against.
+   * Binding the labels to the superseded table would be worse than not
+   * binding them at all — it would be a test asserting the old product.
+   *
+   * It is deliberately about LABELS rather than about layout: the spec is
+   * prose and may arrange its rows however reads best, but every label a user
+   * will see has to appear in it, and a label the spec names has to be one
+   * the product has.
+   */
+  const slice = (from: string, to: string): string =>
+    (SPEC ?? '').slice((SPEC ?? '').indexOf(from), (SPEC ?? '').indexOf(to));
+
+  const CLEAN_WINDOWS = slice(
+    '## Amendment 2026-09-20 — Clean windows',
+    '## Amendment 2026-09-20 — Sidebar shape',
+  );
+  const SIDEBAR = slice(
+    '## Amendment 2026-09-20 — Sidebar shape',
+    '## Amendment 2026-08-26',
+  );
+
+  it('both are present, and each is the section this test thinks it is', () => {
+    expect(CLEAN_WINDOWS.length, 'the Clean-windows amendment is missing').toBeGreaterThan(1000);
+    expect(CLEAN_WINDOWS).toContain('content only');
+    expect(SIDEBAR.length, 'the Sidebar-shape amendment is missing').toBeGreaterThan(1000);
+    expect(SIDEBAR).toContain('The sidebar is a webview again');
+    // The slices do not overlap, or every assertion below could be satisfied
+    // by the wrong section.
+    expect(CLEAN_WINDOWS).not.toContain('Sidebar shape');
+    expect(SIDEBAR).not.toContain('all controls in the view menu');
+  });
+
+  it('the later amendment SAYS it supersedes the earlier one', () => {
+    /*
+     * The two disagree, on purpose, about where the controls live — a reader
+     * who found the first table and stopped would build the product that was
+     * just rejected. So the supersession is stated in the text rather than
+     * left to the reading order.
+     */
+    expect(SIDEBAR).toContain('supersedes');
+    expect(SIDEBAR).toContain('TreeView');
+  });
+
+  it('the Sidebar amendment names every command label the product contributes', () => {
+    const missing = CONTROL_COMMANDS.filter((entry) => !SIDEBAR.includes(entry.label));
+    expect(missing.map((entry) => `${entry.command} (${entry.label})`)).toStrictEqual([]);
+  });
+
+  it('...and every group heading', () => {
+    const missing = CONTROL_GROUPS.filter((group) => !SIDEBAR.includes(group.label));
+    expect(missing.map((group) => group.id)).toStrictEqual([]);
+  });
+
+  it('...and the three pages of the strip, in order — the one-window amendment’s', () => {
+    // Four until spec `Amendment 2026-09-21 — One window` deleted the
+    // Insights tab (v0.9.0 DoD 9.28). The 2026-09-20 amendment still reads
+    // four, as history; what is held is the LATER sentence.
+    for (const section of CONTROL_SECTIONS) {
+      expect(SIDEBAR, section.id).toContain(section.label);
+    }
+    expect(SIDEBAR).toContain('**Sidebar strip is Menu | View | Tweaks.** The Insights tab is deleted.');
+    expect(CONTROL_SECTIONS.map((section) => section.label)).toStrictEqual(['Menu', 'View', 'Tweaks']);
+  });
+
+  it('...and states the two removals by name', () => {
+    // Both are things the product HAD this morning, so their absence from
+    // the code is only legible if the spec says they were taken out.
+    expect(SIDEBAR).toContain('There is no Statistics group');
+    expect(SIDEBAR).toContain('"Deck ordering" is removed');
+  });
+
+  it('...and the Insights page as two states, with no licence in the parent', () => {
+    expect(SIDEBAR).toContain('The parent never knows the licence state');
+    expect(SIDEBAR).toContain('Opens the Insights page in your browser.');
+    expect(SIDEBAR).toContain(INSIGHTS_PAGE_URL);
+    // The dropped teaser, said rather than implied.
+    expect(SIDEBAR).toContain('No counts and no examples in the parent any more');
+  });
+
+  it('...and the Statistics tabs as a ruled exception', () => {
+    expect(SIDEBAR).toContain('Ruled exception');
+    for (const entry of CONTROL_COMMANDS) {
+      if (entry.section !== 'window') continue;
+      expect(SIDEBAR, entry.command).toContain(entry.label);
+    }
+  });
+
+  it('the Clean-windows amendment still states the shortcuts as the count contributed', () => {
+    // The count, spelled, and every key: "nine" stood in four places while
+    // the array held ten, which is this repository's most-recorded defect.
+    expect(CLEAN_WINDOWS).toContain('TEN');
+    for (const row of CONTROL_KEYBINDINGS) {
+      expect(CLEAN_WINDOWS, row.key).toContain(`\`${row.key}`);
+    }
+  });
+
+  it('VACUITY CONTROL: a label the product does not have is in NEITHER', () => {
+    // Without this, a test over an amendment that happened to contain every
+    // word in the language would pass.
+    for (const absent of ['Reset everything', 'Loops and churn', 'Pin session']) {
+      expect(CLEAN_WINDOWS, absent).not.toContain(absent);
+      expect(SIDEBAR, absent).not.toContain(absent);
+    }
+    // ...and the two labels this delta REMOVED are not in the new table,
+    // which is the direction that catches a spec left describing the old
+    // product. `Deck ordering` appears only inside the sentence that says it
+    // was removed, so the check is on the table's own row shape.
+    expect(SIDEBAR).not.toContain('See an example');
+    expect(SIDEBAR).not.toContain('Get Insights |');
+  });
+});
 describe.skipIf(SPEC === null)('agent-deck-spec.md restates the superseded version posture nowhere', () => {
   it('carries neither superseded sentence, anywhere in the document', () => {
     const lower = (SPEC ?? '').toLowerCase();
@@ -2811,6 +3041,24 @@ const STALE_PERSISTENCE_CLAIMS: ReadonlyArray<{ readonly re: RegExp; readonly sh
   { re: /\bno persistence\b/i, shipped: 'discards it when the window closes: no database, no cache file, no persistence.' },
   { re: /writes of any kind/i, shipped: 'Not implemented, and not accepted as contributions: writes of any kind' },
   { re: /historical replay or\s+persistence/i, shipped: 'writes of any kind · historical replay or\npersistence' },
+  /*
+   * v0.9.0 round 6 (verifier round 9.48, D1 and D2). An Insights export is a
+   * second write, made where the user chooses, so "the stats history is THE
+   * one write" became false in two shipped documents and one sentence on the
+   * site kept describing a surface without its fact tiles. Each pattern is
+   * paired with the sentence that really shipped; the qualified wording
+   * ("… on its own") passes.
+   */
+  {
+    re: /\bis the one write\b(?!\s+Agent\s+Deck\s+makes\s+on\s+its\s+own)/i,
+    shipped: 'The stats history in §1 is the one write, and it holds derived numbers',
+  },
+  {
+    re: /\bthe one file it writes\b(?!\s+on\s+its\s+own)/i,
+    shipped: 'Its own stats history is the one file it writes, in its own storage',
+  },
+  { re: /\bThe one thing written to disk\b/i, shipped: 'The one thing written to disk, from 0.7.0, is the stats history' },
+  { re: /findings and run history instead/i, shipped: 'it shows that extension&rsquo;s findings and run history instead.' },
 ];
 
 describe('DoD 5.3 — the shipped documents do not deny the history 0.7.0 keeps', () => {
@@ -2984,7 +3232,7 @@ describe('DoD 5.5b — the README install section names the sidebar and its menu
     expect(INSTALL).toContain('the Agent Deck icon in the activity bar');
   });
 
-  it('lists the menu EXACTLY as src/sidebar/menu.ts declares it, in order', () => {
+  it('lists the menu EXACTLY as src/view/controls.ts declares it, in order', () => {
     const listed = [...INSTALL.matchAll(/^- \*\*([^*]+)\*\* —/gm)].map((m) => m[1] ?? '');
     expect(listed).toStrictEqual(SIDEBAR_MENU.map((entry) => entry.label));
     // Vacuity control: the menu is not empty, so equality is not empty-equals-empty.

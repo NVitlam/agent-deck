@@ -1,0 +1,152 @@
+{
+  "latest": {
+    "sinceMs": 1787993601597,
+    "counted": 10,
+    "excluded": 0,
+    "byEngine": {
+      "cc": 4,
+      "codex": 5,
+      "opencode": 1
+    },
+    "tiles": [
+      {
+        "id": "sessions",
+        "label": "sessions recorded",
+        "count": 10,
+        "value": "10",
+        "note": "Claude Code 4 · Codex 5 · OpenCode 1"
+      },
+      {
+        "id": "compactions",
+        "label": "compactions",
+        "count": 2,
+        "value": "2"
+      },
+      {
+        "id": "idleResumes",
+        "label": "long-idle resumes",
+        "count": 2,
+        "value": "2",
+        "note": "sessions with a gap of 120,000 ms · 2 m or more"
+      },
+      {
+        "id": "rereadLoops",
+        "label": "re-read loops",
+        "count": 0,
+        "value": "0"
+      },
+      {
+        "id": "failedCalls",
+        "label": "failed tool calls",
+        "count": 21,
+        "value": "21"
+      },
+      {
+        "id": "stalls",
+        "label": "stalls",
+        "count": 0,
+        "value": "0"
+      },
+      {
+        "id": "silentSubagents",
+        "label": "silent subagents",
+        "count": 0,
+        "value": "0"
+      },
+      {
+        "id": "promptTokens",
+        "label": "prompt tokens",
+        "count": 253369192,
+        "value": "253,369,192"
+      },
+      {
+        "id": "outputTokens",
+        "label": "output tokens",
+        "count": 571284,
+        "value": "571,284"
+      },
+      {
+        "id": "engineCost",
+        "label": "engine-reported cost",
+        "count": 0,
+        "value": "—",
+        "note": "no session in the window carries an engine-reported cost"
+      }
+    ]
+  },
+  "synthetic": {
+    "sinceMs": 1699398800000,
+    "counted": 13,
+    "excluded": 1,
+    "byEngine": {
+      "cc": 11,
+      "codex": 1,
+      "opencode": 1
+    },
+    "tiles": [
+      {
+        "id": "sessions",
+        "label": "sessions recorded",
+        "count": 13,
+        "value": "13",
+        "note": "Claude Code 11 · Codex 1 · OpenCode 1"
+      },
+      {
+        "id": "compactions",
+        "label": "compactions",
+        "count": 1,
+        "value": "1"
+      },
+      {
+        "id": "idleResumes",
+        "label": "long-idle resumes",
+        "count": 0,
+        "value": "0",
+        "note": "sessions with a gap of 120,000 ms · 2 m or more"
+      },
+      {
+        "id": "rereadLoops",
+        "label": "re-read loops",
+        "count": 1,
+        "value": "1"
+      },
+      {
+        "id": "failedCalls",
+        "label": "failed tool calls",
+        "count": 1,
+        "value": "1"
+      },
+      {
+        "id": "stalls",
+        "label": "stalls",
+        "count": 1,
+        "value": "1"
+      },
+      {
+        "id": "silentSubagents",
+        "label": "silent subagents",
+        "count": 1,
+        "value": "1"
+      },
+      {
+        "id": "promptTokens",
+        "label": "prompt tokens",
+        "count": 13080,
+        "value": "13,080"
+      },
+      {
+        "id": "outputTokens",
+        "label": "output tokens",
+        "count": 1308,
+        "value": "1,308"
+      },
+      {
+        "id": "engineCost",
+        "label": "engine-reported cost",
+        "count": 0.4237,
+        "value": "0.42 USD",
+        "note": "over 1 session"
+      }
+    ]
+  }
+}

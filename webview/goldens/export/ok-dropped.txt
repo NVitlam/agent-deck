@@ -1,0 +1,112 @@
+Report · 2026-09-21 12:00 UTC
+Claude Code 2.1.246
+12 sessions since 2026-09-14 12:00 UTC; 2 excluded
+Run usage: 48,210 prompt tokens · 3,904 output tokens · 0.24 USD (estimated by Claude Code)
+
+2 values from this report did not pass the check and are not shown
+
+1. Lead line 0 for re-read-loop
+   Re-read loop · low confidence · since last run: new
+
+Detail
+Detail paragraph 0.
+It spans two lines.
+
+Cause
+Cause sentence 0.
+
+Evidence
+- Prompt tokens: 128400 (sessions[0].totals.prompt · ses_example01)
+
+2. Lead line 1 for churn-chain
+   Churn chain · medium confidence · since last run: still
+
+Detail
+Detail paragraph 1.
+It spans two lines.
+
+Cause
+Cause sentence 1.
+
+Evidence
+- Prompt tokens: 128400 (sessions[0].totals.prompt · ses_example01)
+
+3. Lead line 2 for context-churn
+   Context churn · high confidence · since last run: resolved
+
+Detail
+Detail paragraph 2.
+It spans two lines.
+
+Cause
+Cause sentence 2.
+
+Evidence
+- Prompt tokens: 128400 (sessions[0].totals.prompt · ses_example01)
+
+4. Lead line 3 for stall
+   Stall · low confidence
+
+Detail
+Detail paragraph 3.
+It spans two lines.
+
+Cause
+Cause sentence 3.
+
+Evidence
+- Prompt tokens: 128400 (sessions[0].totals.prompt · ses_example01)
+
+5. Lead line 4 for silent-subagent
+   Silent subagent · medium confidence · since last run: new
+
+Detail
+Detail paragraph 4.
+It spans two lines.
+
+Cause
+Cause sentence 4.
+
+Evidence
+- Prompt tokens: 128400 (sessions[0].totals.prompt · ses_example01)
+
+6. Lead line 5 for compaction
+   Compaction · high confidence · since last run: still
+
+Detail
+Detail paragraph 5.
+It spans two lines.
+
+Cause
+Cause sentence 5.
+
+Evidence
+- Prompt tokens: 128400 (sessions[0].totals.prompt · ses_example01)
+
+7. Lead line 6 for cache-miss
+   Cache miss · low confidence · since last run: resolved
+
+Detail
+Detail paragraph 6.
+It spans two lines.
+
+Cause
+Cause sentence 6.
+
+Evidence
+- Prompt tokens: 128400 (sessions[0].totals.prompt · ses_example01)
+
+8. Lead line 7 for other
+   Other pattern · medium confidence
+
+Detail
+Detail paragraph 7.
+It spans two lines.
+
+Cause
+Cause sentence 7.
+
+Evidence
+- Prompt tokens: 128400 (sessions[0].totals.prompt · ses_example01)
+
+1 finding rejected by the provider

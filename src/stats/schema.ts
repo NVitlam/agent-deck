@@ -84,7 +84,48 @@ import type { CompactionRecord } from '../model/events.js';
  * comment said the bump cost a user their history; that was the behaviour
  * until the ruling, and it is not the behaviour now.
  */
-export const STATS_SCHEMA_VERSION = 2;
+/**
+ * **3 as of v0.9.0 (DoD 9.4).** Version 2 shipped in v0.8.0 and carried no
+ * `agents[].agentType` and no `skills`. Readers still accept 1 and 2 — see
+ * {@link READABLE_STATS_SCHEMA_VERSIONS} and {@link upgradeStatsRecord}.
+ */
+export const STATS_SCHEMA_VERSION = 3;
+
+/**
+ * String caps — v0.9.0 DoD 9.1. CHARACTERS, not bytes: the cap exists to
+ * bound prose, and prose is counted in characters.
+ *
+ * ## Refused, never truncated
+ *
+ * A truncated prose string is still prose, so there is no cut and no marker.
+ * {@link validateStatsRecord} REFUSES a record carrying an over-length
+ * string — that is the guarantee — and `derive.ts` never builds one: an
+ * over-length OPTIONAL string omits its field, an over-length REQUIRED
+ * string drops its ROW, and `unavailable` names either as
+ * `<section>:string-overlength:<field>`. The session keeps its coverage.
+ *
+ * ## Why only these fields
+ *
+ * These are the two string classes a USER or a MODEL writes: a sidecar
+ * `agentType`, a tool-input `skill` name, and the user's own filesystem
+ * path. `sessionId`, `agentId`, `toolName`, `model` and `projectSlug` are
+ * engine-written identifiers already covered by `redaction.test.ts`, and a
+ * cap on `sessionId` would make a record unkeyable by the store.
+ */
+export const NAME_MAX_CHARS = 64;
+
+/** @see {@link NAME_MAX_CHARS}. Governs `filePath`, wherever it appears. */
+export const PATH_MAX_CHARS = 1024;
+
+/**
+ * The cap each governed key carries, by the same key token
+ * {@link STATS_STRING_FIELDS} is judged on.
+ */
+export const STATS_STRING_CAPS: ReadonlyMap<string, number> = new Map([
+  ['agentType', NAME_MAX_CHARS],
+  ['name', NAME_MAX_CHARS],
+  ['filePath', PATH_MAX_CHARS],
+]);
 
 /** The three observation engines, as `SessionState.engine` names them. */
 export type StatsEngine = 'cc' | 'opencode' | 'codex';
@@ -210,8 +251,20 @@ export interface ChurnRecord {
   toOrdinal: number;
   /** Every tool ordinal STRICTLY between the two writes, ascending. */
   ordinals: number[];
-  /** How many of `ordinals` errored. >= 1, or this is not a churn chain. */
+  /**
+   * How many of `ordinals` errored — EVERY failure in the gap, whatever it
+   * named. >= 1, or this is not a churn chain.
+   */
   errors: number;
+  /**
+   * How many of `ordinals` errored AND name this chain's `filePath` — v0.9.0
+   * DoD 9.57, spec `Amendment 2026-09-26 — Facts for report quality`. 0 when
+   * every failure in the gap named another file or none. Always written by
+   * the deriver; OPTIONAL on the type because a record written before 9.57
+   * carries none, and such a record reads with `fileErrors:absent` in
+   * `unavailable` (see {@link upgradeStatsRecord}).
+   */
+  fileErrors?: number;
 }
 
 /** F7 — one turn whose cache-creation rose by at least `spikeTokens`. */
@@ -221,6 +274,16 @@ export interface ContextChurnRecord {
   ordinal: number;
   /** `cacheCreation(this turn) - cacheCreation(previous turn)`. */
   delta: number;
+  /**
+   * `atMs(this turn) - atMs(previous turn)`, the same two turns `delta` is
+   * taken between — v0.9.0 DoD 9.58. A cache rebuilt after an idle gap
+   * reads a large value here; a spike from a large tool result reads a small
+   * one. `null` where the engine stated no instant for either turn. Always
+   * written by the deriver; OPTIONAL on the type because a record written
+   * before 9.58 carries none, and such a record reads with
+   * `gapBeforeMs:absent` in `unavailable`.
+   */
+  gapBeforeMs?: number | null;
 }
 
 /**
@@ -349,6 +412,62 @@ export interface AgentStats {
   resultUnreceived: boolean;
   /** F9(b) — the model id as the engine wrote it. See the header on G4. */
   model?: string;
+  /**
+   * The sidecar's `meta.agentType` — v0.9.0 DoD 9.2.
+   *
+   * The TYPE alone. `meta.description` is prose written by whoever spawned
+   * the agent and is never exported; the header’s "What is NOT carried"
+   * list excludes `AgentNode.label` for exactly that reason, and this field
+   * is what makes the safe half reachable without splitting that string.
+   *
+   * Absent on `main`, which has no sidecar; absent where a sidecar states
+   * none; absent where the value exceeds {@link NAME_MAX_CHARS}, which
+   * `unavailable` names as `agents:string-overlength:agentType`.
+   */
+  agentType?: string;
+}
+
+/**
+ * One `Skill` invocation — v0.9.0 DoD 9.3.
+ *
+ * ## `name` is allow-listed ONLY here
+ *
+ * `name` is the weakest key in this record — the one most likely to be
+ * reused by a later field for something content-shaped. Adding it to
+ * {@link STATS_STRING_FIELDS} would allow a string on that key ANYWHERE at
+ * any depth, which is precisely the widening the key-based design exists to
+ * prevent. It is allow-listed by PATH instead — see
+ * {@link STATS_SCOPED_STRING_FIELDS} — so a `name` anywhere else is still
+ * refused.
+ *
+ * ## `seq`, and why it is not `ordinal`
+ *
+ * The value is the SESSION-WIDE call-sequence position, the same sequence
+ * `FileStats.firstTouchSeq` counts in. This file's own rule, stated at the
+ * top of {@link FileStats}, is that a session-wide position is named
+ * `...Seq` and a per-agent one `...Ordinal`, *and the suffix is
+ * load-bearing*: three different numbering systems live in this record and
+ * naming them all "ordinal" is how a later reader resolves the wrong node.
+ *
+ * **The spec amendment of 2026-09-20 first specified `ordinal`.** It was
+ * built that way and the tension was recorded here rather than resolved
+ * silently, because a field name in a spec amendment is the user’s own
+ * words. **User ruling, 2026-09-20: renamed to `seq`, to match the naming.**
+ *
+ * The VALUE never moved: it is the session-wide position under either name.
+ * An array index would be a field that cannot be wrong, which is this
+ * repository’s most-recorded defect shape, and the goldens carry 115, 185,
+ * 248, 43 and 184 to show it is not one.
+ */
+export interface SkillStat {
+  /** The skill as the call named it, from the one input key `skill`. */
+  name: string;
+  /**
+   * Position in the SESSION-WIDE call sequence — the `...Seq` suffix, per
+   * this file's naming rule. See above; it was `ordinal` until the user's
+   * ruling of 2026-09-20.
+   */
+  seq: number;
 }
 
 /** One session's Layer 1 facts. */
@@ -368,6 +487,21 @@ export interface StatsRecord {
   contextChurn: ContextChurnRecord[];
   compactions: CompactionStat[];
   stalls: StallRecord[];
+  /**
+   * Every `Skill` call this session made, in call order — v0.9.0 DoD 9.3.
+   *
+   * ALWAYS PRESENT, possibly empty, and the asymmetry with the optional
+   * fields above is deliberate: an empty array here means "this session
+   * invoked no skill", which is a measured fact on every engine, not an
+   * absence. An engine with no skill-invoking tool states that through
+   * `unavailable` instead.
+   *
+   * **Tool-call → skill attribution is not recorded by Claude Code and is
+   * not exported.** Nothing in the transcript says which later calls a
+   * skill's instructions produced, so any such link would be inference.
+   * Layer 2 may interpret; Layer 1 states what was invoked and where.
+   */
+  skills: SkillStat[];
   /** F14 — see {@link TimingStats}. Always present; may hold no member. */
   timing: TimingStats;
   totals: {
@@ -434,10 +568,30 @@ export const STATS_STRING_FIELDS: ReadonlySet<string> = new Set([
   'agentId',
   'toolName',
   'model',
+  // The sidecar-written agent type. A strong, unique key: nothing else in
+  // this record is called `agentType`, so the bare form is safe here.
+  'agentType',
   // The user's own path, structurally extracted from ONE named argument key
   'filePath',
   // Fact ids: `F7:opencode`. Elements of an array, keyed by the array's name.
   'unavailable',
+]);
+
+/**
+ * String keys allowed only at ONE PATH — v0.9.0 DoD 9.3.
+ *
+ * {@link STATS_STRING_FIELDS} is judged on the KEY alone, at any depth,
+ * which is what makes it total. That strength is also its cost: a key weak
+ * enough to be reused — `name` — would, once bare-listed, allow a string on
+ * that key anywhere a later field cared to put one.
+ *
+ * So `skills[].name` is allowed by PATH. The path compared is the record
+ * path with every array index normalised to `[]`, so `skills[0].name` and
+ * `skills[17].name` are both `skills[].name` and a `name` under any other
+ * parent is still refused. `schema.test.ts` drives that negative.
+ */
+export const STATS_SCOPED_STRING_FIELDS: ReadonlySet<string> = new Set([
+  'skills[].name',
 ]);
 
 /** A validator's answer. `errors` is empty iff `ok`. */
@@ -469,8 +623,24 @@ function walkStrings(value: unknown, key: string, path: string, errors: string[]
     return;
   }
   if (typeof value === 'string') {
-    if (!STATS_STRING_FIELDS.has(key)) {
+    // A path with every array index normalised: `skills[0].name` reads as
+    // `skills[].name`, so the scoped entry is written once and holds for
+    // every element.
+    const scopedPath = path.replace(/\[\d+\]/g, '[]');
+    const allowed =
+      STATS_STRING_FIELDS.has(key) || STATS_SCOPED_STRING_FIELDS.has(scopedPath);
+    if (!allowed) {
       errors.push(`string field off the allow-list: ${path} (key '${key}')`);
+      return;
+    }
+    // DoD 9.1 — the cap. Refused, never truncated: a truncated prose string
+    // is still prose. The deriver is what omits the field or drops the row;
+    // reaching here means something built a record it should not have.
+    const cap = STATS_STRING_CAPS.get(key);
+    if (cap !== undefined && value.length > cap) {
+      errors.push(
+        `string over cap: ${path} is ${String(value.length)} characters, cap ${String(cap)}`,
+      );
     }
     return;
   }
@@ -543,6 +713,7 @@ export function validateStatsRecord(value: unknown): StatsValidation {
     'contextChurn',
     'compactions',
     'stalls',
+    'skills',
     'unavailable',
   ]) {
     requireArray(record, key, errors);
@@ -592,7 +763,7 @@ export function validateStatsRecord(value: unknown): StatsValidation {
  * and never rewritten. A version outside this list is still refused, because
  * nothing here knows what a FUTURE format means.
  */
-export const READABLE_STATS_SCHEMA_VERSIONS: readonly number[] = [1, STATS_SCHEMA_VERSION];
+export const READABLE_STATS_SCHEMA_VERSIONS: readonly number[] = [1, 2, STATS_SCHEMA_VERSION];
 
 /**
  * The fact ids an upgraded record names, per version it was written at.
@@ -605,7 +776,8 @@ export const READABLE_STATS_SCHEMA_VERSIONS: readonly number[] = [1, STATS_SCHEM
  * `unavailable` already uses: `<fact>:<reason>`.
  */
 export const HISTORY_ABSENT_FACTS: Readonly<Record<number, readonly string[]>> = {
-  1: ['F14:absent', 'F15:absent'],
+  1: ['F14:absent', 'F15:absent', 'agentType:absent', 'skills:absent'],
+  2: ['agentType:absent', 'skills:absent'],
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -613,11 +785,44 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * Row fields added WITHOUT a schema bump — v0.9.0 DoD 9.57 and 9.58, spec
+ * `Amendment 2026-09-26 — Facts for report quality`. Both are additive, so
+ * `statsSchemaVersion` stays 3 and a v3 record written before them is still
+ * a v3 record. Which records lack them is therefore read off the ROWS, not
+ * off the version: a record any of whose rows lacks the field names
+ * `<field>:absent`, whatever version wrote it. A record with no such row
+ * has nothing to mark — an empty `churn` states no chain, under any deriver.
+ */
+export const ROW_FIELDS_ADDED: readonly {
+  readonly section: 'churn' | 'contextChurn';
+  readonly field: string;
+  readonly marker: string;
+}[] = [
+  { section: 'churn', field: 'fileErrors', marker: 'fileErrors:absent' },
+  { section: 'contextChurn', field: 'gapBeforeMs', marker: 'gapBeforeMs:absent' },
+];
+
+function rowFieldMarkers(value: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  for (const { section, field, marker } of ROW_FIELDS_ADDED) {
+    const rows = value[section];
+    if (!Array.isArray(rows)) continue;
+    if (rows.some((row: unknown) => isPlainObject(row) && !Object.hasOwn(row, field))) {
+      out.push(marker);
+    }
+  }
+  return out;
+}
+
+/**
  * A stored line, as the current reader sees it — v0.8.0 DoD 7.14.
  *
- * A current-version record, and anything that is not a version-1 record, is
- * returned AS IS: validation is still {@link validateStatsRecord}'s job, and
- * a version this reader does not know is still refused there.
+ * A current-version record is returned AS IS unless a row lacks a field of
+ * {@link ROW_FIELDS_ADDED} (v0.9.0 DoD 9.57/9.58), when it is returned as a
+ * new object whose `unavailable` names the gap and nothing else changes.
+ * Anything that is not a readable record is returned as is: validation is
+ * still {@link validateStatsRecord}'s job, and a version this reader does not
+ * know is still refused there.
  *
  * A version-1 record is returned as a NEW object in the current shape: an
  * empty `timing` block (the shape a session stating no instant already has),
@@ -636,15 +841,31 @@ export function upgradeStatsRecord(value: unknown): unknown {
   // what decides, so removing a version from it makes that version's lines
   // refused again (the validator then sees the old number) — verifier round 2
   // found the list declared and consulted by nothing.
-  if (typeof version !== 'number' || version === STATS_SCHEMA_VERSION) return value;
+  if (typeof version !== 'number') return value;
+  if (version === STATS_SCHEMA_VERSION) {
+    // DoD 9.57/9.58 — a current-version record written before the row
+    // fields existed. Returned AS IS when it lacks none, so a record the
+    // current deriver wrote is the same object the store read.
+    const markers = rowFieldMarkers(value);
+    const unavailable = value['unavailable'];
+    if (markers.length === 0 || !Array.isArray(unavailable)) return value;
+    return {
+      ...value,
+      unavailable: [...new Set([...(unavailable as unknown[]), ...markers])].sort(),
+    };
+  }
   if (!READABLE_STATS_SCHEMA_VERSIONS.includes(version)) return value;
-  const absent = HISTORY_ABSENT_FACTS[version] ?? [];
+  const absent = [...(HISTORY_ABSENT_FACTS[version] ?? []), ...rowFieldMarkers(value)];
   const agents = value['agents'];
   const unavailable = value['unavailable'];
   return {
     ...value,
     statsSchemaVersion: STATS_SCHEMA_VERSION,
     timing: isPlainObject(value['timing']) ? value['timing'] : {},
+    // DoD 9.4 — the v3 SHAPE. An empty array is the shape a session that
+    // invoked no skill already has; which one this is reads off
+    // `skills:absent` in `unavailable`, never off the array.
+    skills: Array.isArray(value['skills']) ? value['skills'] : [],
     agents: Array.isArray(agents)
       ? agents.map((agent: unknown) =>
           isPlainObject(agent) && agent['resultUnreceived'] === undefined

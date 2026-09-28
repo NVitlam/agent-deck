@@ -691,8 +691,31 @@ describe('privacy sweep against this repository', () => {
     // and only their findings are diverted - the count is the evidence the scan
     // reached them.
     if (report.config.identity.status === 'SKIPPED') return;
-    expect(report.config.identity.exemptPaths).toContain('LICENSE');
-    expect(report.config.identity.exemptPaths).toContain('package.json');
+    /*
+     * THE EXACT SET AND ITS COUNT — rule 19, applied to this list for the
+     * first time in v0.9.0.
+     *
+     * It was two `toContain`s, so an ADDITION tripped nothing. The list
+     * decides where the identity may appear, and 0.9.0 added two whole
+     * source files to it (DoD 9.7: the About paragraph names the author).
+     * A list that can grow silently is the wrong shape for that.
+     *
+     * Adding a path now means editing this literal, which is the point.
+     */
+    expect([...report.config.identity.exemptPaths].sort()).toStrictEqual([
+      'LICENSE',
+      'package-lock.json',
+      'package.json',
+      'site/index.html',
+      // v0.9.0 DoD 9.34: the Insights subpage, for the index page's reason —
+      // the repository, Sponsors and footer links the site amendment requires.
+      'site/insights.html',
+      // 2026-09-28: the post-payment page carries the same nav and footer.
+      'site/thanks.html',
+      'src/about.test.ts',
+      'src/about.ts',
+    ]);
+    expect(report.config.identity.exemptPaths).toHaveLength(8);
     expect(report.workingTree.identity.exemptHits).toBeGreaterThan(0);
   });
 

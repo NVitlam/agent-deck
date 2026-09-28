@@ -73,7 +73,12 @@
     DeckSortMode,
   } from './layout.js';
   import { displayLiveness } from './format.js';
-  import { boundsOf, transformAttr, viewportWidthInStageUnits } from './viewport.js';
+  import {
+    boundsOf,
+    createWheelNotcher,
+    transformAttr,
+    viewportWidthInStageUnits,
+  } from './viewport.js';
   import type { Rect, Viewport, ViewportSize } from './viewport.js';
   import type { SessionSummary } from './store.js';
   import SessionCell from './SessionCell.svelte';
@@ -89,12 +94,11 @@
     deckView = { x: 0, y: 0, k: 1 },
     onpan,
     onzoom,
-    onreset,
     onfit,
     total,
     engineFilter = DEFAULT_ENGINE_FILTER,
-    onenginefilter,
-    defaultOrdering = undefined,
+    layoutMode = DEFAULT_DECK_LAYOUT,
+    sortMode = DEFAULT_DECK_SORT,
     now,
     viewportWidth,
     viewportHeight,
@@ -152,14 +156,14 @@
      * the cursor position in this element's own coordinates.
      */
     onzoom?: ((notches: number, clientX: number, clientY: number) => void) | undefined;
-    /** The "Reset view" control: back to the identity transform. */
-    onreset?: (() => void) | undefined;
     /**
      * Double-click on empty field: fit the content with `DECK_FIT_PADDING`.
      *
-     * Separate from `onreset` because they are two different answers — reset
-     * goes to 1:1 at the origin, fit goes to whatever scale shows everything —
-     * and a user who has zoomed out to find a card wants the second one.
+     * The other answer — back to the identity transform — is View ▸ Reset
+     * view now, and it reaches the store directly. The two are still
+     * different answers: reset goes to 1:1 at the origin, fit goes to
+     * whatever scale shows everything, and a user who has zoomed out to find
+     * a card wants the second one.
      */
     onfit?: ((content: Rect, size: ViewportSize) => void) | undefined;
     /** How many sessions exist before filtering. Defaults to what is shown. */
@@ -190,25 +194,19 @@
      */
     engineFilter?: EngineFilter;
     /**
-     * A chip or a key asked for a different engine. Wired to
-     * `Store.setEngineFilter`.
+     * How the cards are placed, and in what order — v0.9.0 DoD 9.14.
      *
-     * Reporting rather than setting: with the value in the store there is
-     * exactly one of it, and a component that also kept its own copy would be
-     * the two-agreeing-literals defect `canvas-contract.ts` exists to prevent,
-     * in state instead of in a name.
-     */
-    onenginefilter?: ((filter: EngineFilter) => void) | undefined;
-    /**
-     * `agentDeck.defaultOrdering` — the sort this deck STARTS at (DoD 7.6).
+     * Props, like `engineFilter` beside them, and for the same reason: with
+     * the values in the store there is exactly one of each, and a component
+     * that also kept its own copy would be the two-agreeing-literals defect
+     * `canvas-contract.ts` exists to prevent, in state instead of in a name.
      *
-     * Not the sort itself, and not store state: it is the value `sortMode`
-     * below is seeded from, once, when this component is built. Absent means
-     * the host has not stated one this build knows, and the fallback is
-     * `DEFAULT_DECK_SORT` — the design's own default, written in
-     * `layout.ts` and nowhere else.
+     * The defaults are here so this component can still be mounted on its own.
+     * They are the values the store also starts at, not a second opinion about
+     * what the defaults are — `layout.ts` owns both constants.
      */
-    defaultOrdering?: DeckSortMode | undefined;
+    layoutMode?: DeckLayoutMode;
+    sortMode?: DeckSortMode;
     /**
      * The renderer's clock, in epoch milliseconds, for each card's age.
      *
@@ -237,84 +235,25 @@
   const FALLBACK_FIELD_W = 960;
   const FALLBACK_FIELD_H = 600;
 
-  /** The control bar's fixed height. Not part of the field, never transformed. */
-  const CONTROL_BAR_H = 40;
 
-  /* --------------------------------------------------------------------- *
-   * Control-bar state (G7)
-   * --------------------------------------------------------------------- */
-
-  /**
-   * WHY THESE TWO LIVE HERE AND THE ENGINE FILTER DOES NOT.
+  /*
+   * THE LAYOUT AND THE SORT WERE COMPONENT STATE UNTIL v0.9.0 DoD 9.14, and
+   * the argument for that is now the argument against it.
    *
-   * All three are webview-only view state — no setting, no persistence, no
-   * host message, discarded when the panel closes — so G7 is satisfied
-   * wherever they sit. What decides it is LIFETIME, and this component's
-   * lifetime is shorter than the panel's: `App.svelte` mounts it only while
-   * the altitude is `deck`, so anything held here is reset by a session visit.
+   * It ran: this component's lifetime is one deck visit, layout and sort are
+   * "re-chosen from the bar that is in front of you at the moment you want
+   * them", so a session visit resetting them is a decision rather than a leak.
+   * Spec `Amendment 2026-09-20` removes the bar. There is nothing in front of
+   * the user to re-choose from, so the lifetime argument has no subject, and
+   * both values follow the engine filter into the HOST — which is also what
+   * makes the sidebar's tick and the field agree.
    *
-   * Layout and sort survive that correctly. They are re-chosen from the bar
-   * that is in front of you at the moment you want them, and coming back to
-   * the design's default grid is not a surprise. The engine filter does not:
-   * it is a statement about which sessions the user considers theirs, it has
-   * to hold across an entry and an exit, and it lived here through Phase 7 —
-   * quietly resetting to `all` on every return from a session while the
-   * liveness filter, already store state, held. It is `store.ts`'s now and
-   * arrives as a prop.
+   * `agentDeck.defaultOrdering` still seeds the sort. It does it ONCE, at
+   * activation, in `extension.ts`, which removes the two-mechanism dance this
+   * block used to describe: there is no `sortChosen`, because a command the
+   * user ran and a setting they set cannot race inside a component that no
+   * longer holds either.
    */
-  let layoutMode = $state.raw<DeckLayoutMode>(DEFAULT_DECK_LAYOUT);
-  /**
-   * The sort, and what seeds it: `agentDeck.defaultOrdering` (DoD 7.6).
-   *
-   * TWO FACTS DECIDE THE SHAPE HERE, and the second was measured rather than
-   * assumed.
-   *
-   * The first is the block above, which predates this setting: `App.svelte`
-   * mounts this component only at the deck altitude, so entering a session
-   * destroys it and returning builds a new one, and the sort going back to its
-   * starting value on that return is a decision recorded there rather than a
-   * leak. All the setting changes is WHAT it goes back to.
-   *
-   * The second is that A CONSTRUCTION-TIME SEED ALONE CANNOT WORK. The host
-   * creates the webview, the bundle mounts `App.svelte`, and `App.svelte`
-   * mounts this component immediately — the altitude starts at `deck` — so the
-   * first `settings` message ALWAYS arrives after this component was built.
-   * `let sortMode = $state.raw(defaultOrdering ?? DEFAULT_DECK_SORT)` applies
-   * the setting on every return to the deck and never on the first one, which
-   * is the deck a person opens the panel to. It was written that way and
-   * `tweaks-effects.test.ts` caught it.
-   *
-   * So the rule is: THE SORT FOLLOWS THE SETTING UNTIL THE USER PICKS ONE ON
-   * THIS DECK, and after that it is theirs for as long as this deck lives.
-   * Both halves matter — without the first the setting is dead on arrival, and
-   * without the second a configuration change re-sorts the deck under the
-   * control the user just used. `sortChosen` is what separates them, and it
-   * dies with the component, which is what makes the next deck the setting's
-   * again.
-   *
-   * ONE MECHANISM, NOT TWO: the initialiser is `DEFAULT_DECK_SORT`, the
-   * design's own default and the only default written down anywhere in this
-   * renderer, and the effect below is the ONLY place `defaultOrdering` is
-   * read. Seeding in both places would leave the initialiser's arm unobservable
-   * — the effect re-seeds every mount anyway — and this repository has shipped
-   * enough code that no test can contradict.
-   */
-  let sortMode = $state.raw<DeckSortMode>(DEFAULT_DECK_SORT);
-
-  /** Has the user chosen a sort ON THIS DECK? Dies with the component. */
-  let sortChosen = $state.raw(false);
-
-  $effect(() => {
-    const seed = defaultOrdering;
-    if (sortChosen || seed === undefined || seed === sortMode) return;
-    sortMode = seed;
-  });
-
-  /** The control bar's own choice: it wins over the setting from here on. */
-  function chooseSort(value: DeckSortMode): void {
-    sortChosen = true;
-    sortMode = value;
-  }
 
   /**
    * The chips and segments, in the order they render.
@@ -549,11 +488,25 @@
     (event.currentTarget as Element).releasePointerCapture?.(event.pointerId);
   };
 
+  /*
+   * ONE NOTCH PER GESTURE, NOT PER EVENT — v0.9.0 DoD 9.14.
+   *
+   * The accumulator is in `viewport.ts` so this surface and the session
+   * interior obey one rule, and so the rule can be driven by a golden without
+   * a DOM. `preventDefault` is unconditional, which is what makes ctrl+wheel
+   * and trackpad pinch take the same path as an ordinary wheel: the amendment
+   * says they obey the same law, and a special case here is how they would
+   * stop.
+   */
+  const notcher = createWheelNotcher();
+
   const onWheel = (event: WheelEvent): void => {
     if (onzoom === undefined) return;
     event.preventDefault();
+    const notches = notcher.feed(event.deltaY, event.deltaMode, event.timeStamp);
+    if (notches === 0) return;
     const point = local(event);
-    onzoom(event.deltaY < 0 ? 1 : -1, point.x, point.y);
+    onzoom(notches, point.x, point.y);
   };
 
   const onDoubleClick = (event: MouseEvent): void => {
@@ -567,35 +520,20 @@
    * Keyboard: A C O, 1 2 3, L R E
    * --------------------------------------------------------------------- */
 
-  const onKeyDown = (event: KeyboardEvent): void => {
-    if (event.altKey || event.ctrlKey || event.metaKey) return;
-    const target = event.target as HTMLElement | null;
-    const tag = target?.tagName ?? '';
-    // Never steal a keystroke from a field the user is typing into.
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable === true) return;
-    const key = event.key.toLowerCase();
-    const engine = ENGINE_CHIPS.find((c) => c.key === key);
-    if (engine !== undefined) {
-      // Reported, not set. The store owns the value; see the note above.
-      onenginefilter?.(engine.value);
-      event.preventDefault();
-      return;
-    }
-    const layout = LAYOUTS.find((c) => c.key === key);
-    if (layout !== undefined) {
-      layoutMode = layout.value;
-      event.preventDefault();
-      return;
-    }
-    const sort = SORTS.find((c) => c.key === key);
-    if (sort !== undefined) {
-      chooseSort(sort.value);
-      event.preventDefault();
-    }
-  };
+  /*
+   * The deck's own key handler was here until v0.9.0 DoD 9.14.
+   *
+   * THE SHORTCUTS STAY — the ruling says so — but they are the EDITOR'S now:
+   * `package.json` binds c/o/x, 1/2/3 and l/r/e to the same commands the View
+   * submenu runs, scoped by `activeWebviewPanelId == 'agentDeck.panel'` so
+   * they cannot fire while somebody is typing in a file. A handler here would
+   * be a second way to move a value this component no longer owns.
+   *
+   * Escape and `k` are NOT here and never were: they belong to
+   * `SessionCanvas.svelte`, they move content rather than a control, and they
+   * stay exactly where they are.
+   */
 </script>
-
-<svelte:window on:keydown={onKeyDown} />
 
 <section
   class={reducedMotion ? `deck ${REDUCED_MOTION_CLASS}` : 'deck'}
@@ -608,72 +546,16 @@
   data-engine-filter={engineFilter}
   aria-label="Deck"
 >
-  <!-- THE CONTROL BAR. Fixed height, outside the SVG, so it neither pans nor
-       zooms. Three groups: engines left, layout centre, sort right. -->
-  <div class="bar" data-testid="deck-bar" style={`height:${CONTROL_BAR_H}px`}>
-    <div class="group left" role="group" aria-label="Filter by engine">
-      {#each ENGINE_CHIPS as chip (chip.value)}
-        <button
-          type="button"
-          class="chip"
-          data-testid="deck-engine-chip"
-          data-engine={chip.value}
-          data-active={String(engineFilter === chip.value)}
-          data-count={String(counts[chip.value])}
-          aria-pressed={engineFilter === chip.value}
-          title={`${chip.label} (${chip.key.toUpperCase()})`}
-          onclick={() => onenginefilter?.(chip.value)}
-          >{chip.label}<span class="badge">{counts[chip.value]}</span></button
-        >
-      {/each}
-    </div>
+  <!--
+    THE CONTROL BAR WAS HERE UNTIL v0.9.0 DoD 9.14: four engine chips with
+    their counts, three layout segments, three sort segments, the "n of m"
+    count and Reset view.
 
-    <div class="group centre" role="group" aria-label="Layout">
-      {#each LAYOUTS as option (option.value)}
-        <button
-          type="button"
-          class="seg"
-          data-testid="deck-layout-option"
-          data-layout={option.value}
-          data-active={String(layoutMode === option.value)}
-          aria-pressed={layoutMode === option.value}
-          title={`${option.label} (${option.key})`}
-          onclick={() => (layoutMode = option.value)}>{option.label}</button
-        >
-      {/each}
-    </div>
-
-    <div class="group right" role="group" aria-label="Sort">
-      {#each SORTS as option (option.value)}
-        <button
-          type="button"
-          class="seg"
-          data-testid="deck-sort-option"
-          data-sort={option.value}
-          data-active={String(sortMode === option.value)}
-          aria-pressed={sortMode === option.value}
-          title={`${option.label} (${option.key.toUpperCase()})`}
-          onclick={() => chooseSort(option.value)}>{option.label}</button
-        >
-      {/each}
-      <span
-        class="count"
-        data-testid="deck-count"
-        data-shown={String(shown)}
-        data-total={String(totalCount)}
-        >{shown === totalCount ? `${totalCount}` : `${shown} of ${totalCount}`}</span
-      >
-      {#if onreset !== undefined}
-        <button
-          type="button"
-          class="seg"
-          data-testid={TESTID.deckReset}
-          data-identity={String(deckView.x === 0 && deckView.y === 0 && deckView.k === 1)}
-          onclick={() => onreset?.()}>Reset view</button
-        >
-      {/if}
-    </div>
-  </div>
+    Spec `Amendment 2026-09-20 — Clean windows`: the field is content, and
+    every one of those is an entry in View. The values still arrive — they are
+    props now, from the store, from the host — so the deck draws exactly what
+    it drew; nothing on it can be pressed.
+  -->
 
   {#if visible.length === 0}
     <!-- One quiet line. Not an error, not a spinner, not a call to action —
@@ -756,73 +638,10 @@
     background: var(--vscode-editor-background);
   }
 
-  .bar {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex: 0 0 auto;
-    padding: 0 8px;
-    border-bottom: 1px solid var(--vscode-panel-border, transparent);
-    /* The bar is a sibling of the field, so it cannot inherit the stage
-       transform. Stated here as well as in the header because it is the whole
-       reason the markup is shaped this way. */
-    transform: none;
-  }
-
-  .group {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .group.centre {
-    margin: 0 auto;
-  }
-
-  .group.right {
-    margin-left: auto;
-  }
-
-  .chip,
-  .seg {
-    font: inherit;
-    font-size: 0.85em;
-    color: var(--vscode-foreground);
-    background: transparent;
-    border: 1px solid var(--vscode-panel-border, transparent);
-    border-radius: 9px;
-    padding: 0 8px;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-
-  .seg {
-    border-radius: 3px;
-  }
-
-  .chip[data-active='true'],
-  .seg[data-active='true'] {
-    background: var(--vscode-badge-background, transparent);
-    color: var(--vscode-badge-foreground, inherit);
-  }
-
-  .chip:focus-visible,
-  .seg:focus-visible {
-    outline: 1px solid var(--vscode-focusBorder, currentColor);
-    outline-offset: 1px;
-  }
-
-  .badge {
-    margin-left: 5px;
-    opacity: 0.75;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .count {
-    font-size: 0.85em;
-    opacity: 0.8;
-    white-space: nowrap;
-  }
+  /*
+   * The control bar's rules were here until v0.9.0 DoD 9.14: bar, group,
+   * chip, seg, badge and count. Every element they styled is gone.
+   */
 
   .field {
     flex: 1;

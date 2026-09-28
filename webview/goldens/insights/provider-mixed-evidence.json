@@ -1,0 +1,134 @@
+{
+  "title": "Agent Deck Insights 0.2.0",
+  "rows": [
+    {
+      "runId": "run-3",
+      "state": "ok",
+      "when": "2026-09-21 12:00 UTC",
+      "outcome": "8 findings",
+      "agent": "Claude Code"
+    },
+    {
+      "runId": "run-2",
+      "state": "empty",
+      "when": "2026-09-20 12:00 UTC",
+      "outcome": "no findings",
+      "agent": "Codex"
+    },
+    {
+      "runId": "run-1",
+      "state": "refused",
+      "when": "2026-09-19 12:00 UTC",
+      "outcome": "refused",
+      "agent": "Claude Code"
+    },
+    {
+      "runId": "run-4",
+      "state": "ok",
+      "when": "2026-09-18 12:00 UTC",
+      "outcome": "1 finding",
+      "agent": "Claude Code"
+    }
+  ],
+  "preview": {
+    "runId": "run-4",
+    "report": {
+      "state": "ok",
+      "facts": {
+        "heading": "Report · 2026-09-18 12:00 UTC",
+        "agent": "Claude Code 2.1.246",
+        "window": "3 sessions since 2026-09-11 12:00 UTC",
+        "usage": "Run usage: 1,000 prompt tokens · 100 output tokens · 0.0040 USD (estimated by Claude Code)"
+      },
+      "findings": [
+        {
+          "lead": "Lead line 0 for re-read-loop",
+          "meta": "Re-read loop · low confidence · since last run: new",
+          "detail": "",
+          "cause": "Cause sentence 0.",
+          "evidence": [
+            {
+              "label": "Reads",
+              "value": "7",
+              "source": "sessions[0].loops[0].count · ses_example01"
+            },
+            {
+              "label": "File",
+              "value": "repo/docs/schema.md",
+              "source": "sessions[0].files[2].filePath · ses_example01"
+            },
+            {
+              "label": "Skill",
+              "value": "phase",
+              "source": "sessions[1].skills[0].name · ses_example02"
+            },
+            {
+              "label": "Cache ratio",
+              "value": "0.11",
+              "source": "sessions[1].totals.prompt · ses_example02"
+            },
+            {
+              "label": "Longest gap",
+              "value": "28,100,113 ms · 7 h 48 m",
+              "source": "sessions[0].timing.longestGapMs · ses_example01"
+            },
+            {
+              "label": "Gap before spike",
+              "value": "312,450 ms · 5 m 12 s",
+              "source": "sessions[1].contextChurn[0].gapBeforeMs · ses_example02"
+            },
+            {
+              "label": "Duration sum",
+              "value": "90,500 ms · 1 m 30 s",
+              "source": "sessions[1].tools[0].durationMsSum · ses_example02"
+            },
+            {
+              "label": "Duration max",
+              "value": "61,250 ms · 1 m 1 s",
+              "source": "sessions[1].tools[0].durationMsMax · ses_example02"
+            },
+            {
+              "label": "Cost",
+              "value": "0.24",
+              "exact": "0.238149",
+              "source": "sessions[0].totals.costUsd · ses_example01"
+            },
+            {
+              "label": "Cost per hour",
+              "value": "0.37",
+              "exact": "0.37125",
+              "source": "sessions[0].timing.costPerHourUsd · ses_example01"
+            },
+            {
+              "label": "Cache ratio",
+              "value": "0.82",
+              "exact": "0.8234567",
+              "source": "sessions[0].agents[0].cacheRatio · ses_example01"
+            },
+            {
+              "label": "Context fill",
+              "value": "0.40",
+              "exact": "0.4",
+              "source": "sessions[0].totals.contextFill · ses_example01"
+            },
+            {
+              "label": "Tokens per minute",
+              "value": "1,235",
+              "exact": "1234.5678",
+              "source": "sessions[0].timing.tokensPerMin · ses_example01"
+            },
+            {
+              "label": "Calls per minute",
+              "value": "3",
+              "source": "sessions[0].timing.callsPerMin · ses_example01"
+            }
+          ]
+        }
+      ],
+      "resolved": "No longer reported: Stall, Cache miss",
+      "dropped": "1 value from this report did not pass the check and is not shown",
+      "rawOutput": false,
+      "investigate": false
+    }
+  }
+}

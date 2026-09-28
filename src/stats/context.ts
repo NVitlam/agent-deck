@@ -81,7 +81,12 @@ export function deriveContextChurn(
       if (previous === undefined || turn === undefined) continue;
       const delta = turn.cacheCreation - previous.cacheCreation;
       if (delta < threshold) continue;
-      out.push({ agentId: agent.agentId, ordinal: turn.ordinal, delta });
+      // DoD 9.58 — the time between the two turns the delta is taken
+      // between. `null`, never 0, where either instant is unstated: a zero
+      // gap is a claim the engine did not make.
+      const gapBeforeMs =
+        turn.atMs === undefined || previous.atMs === undefined ? null : turn.atMs - previous.atMs;
+      out.push({ agentId: agent.agentId, ordinal: turn.ordinal, delta, gapBeforeMs });
     }
   }
   out.sort(

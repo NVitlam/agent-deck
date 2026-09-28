@@ -23,7 +23,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { WebviewToHostMessage } from '../src/model/events.js';
 import type { Store } from './store.js';
 import type { WebviewHarness } from './testkit.js';
-import { all, loadHarness, one, press } from './testkit.js';
+import { all, loadHarness, one } from './testkit.js';
 import { TESTID } from './canvas-contract.js';
 import { fit } from './layout/fit.js';
 import { transformAttr } from './viewport.js';
@@ -237,8 +237,11 @@ describe('the deck is untouched', () => {
       panel.store.selectNode('tool-read');
     });
     expect(panel.store.getView().deckView).toStrictEqual({ x: 0, y: 0, k: 1 });
-    press(one(panel.container, TESTID.crumbDeck));
-    harness.flushSync();
+    // Ruling 2 (DoD 9.14): the breadcrumbs are gone, so back is Escape or
+    // Menu -> Open Deck. The host's action is what the menu entry sends.
+    harness.flushSync(() => {
+      panel.store.handleMessage({ type: 'viewAction', action: 'openDeck' });
+    });
     expect(one(panel.container, TESTID.deckStage).getAttribute('transform')).toBe(transformAttr({ x: 0, y: 0, k: 1 }));
   });
 });

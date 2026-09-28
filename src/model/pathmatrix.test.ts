@@ -1008,6 +1008,20 @@ function wsl(args: readonly string[]): string {
 }
 
 /**
+ * Run a command inside WSL under a HOME this test owns — v0.9.0 DoD 9.10.
+ *
+ * `env` is set INSIDE the distro rather than through `wsl.exe`’s own
+ * environment, because `--exec` does not pass the caller's environment
+ * through and `WSLENV` would have to name every variable. `sh -c` with the
+ * assignment in front of the command is the shape that works in both
+ * directions and is what the probe sees.
+ */
+function wslWithHome(home: string, args: readonly string[]): string {
+  const quoted = args.map((arg) => `'${arg.replace(/'/gu, `'\\''`)}'`).join(' ');
+  return wsl(['sh', '-c', `HOME='${home}' ${quoted}`]);
+}
+
+/**
  * Windows paths reach `wslpath` with their backslashes stripped — measured:
  * `wslpath -u C:\Users\dev\projects` receives `C:Usersdevprojects`. Forward
  * slashes survive and `wslpath` accepts them, so the argument is converted and
@@ -1080,11 +1094,6 @@ describe.skipIf(!WSL.usable)('WSL leg: this repo\u2019s resolution code under re
     'resolves $HOME/.claude/projects, encodes the same slugs, and refuses an ambiguous slug on a case-sensitive filesystem',
     () => {
       const linuxNode = WSL.linuxNode as string;
-      const claudeBefore = wsl([
-        'sh',
-        '-c',
-        'test -d "$HOME/.claude" && echo present || echo absent',
-      ]);
 
       {
         const bundleLinux = wsl(['wslpath', '-u', forWslpath(BUNDLE)]);
@@ -1147,18 +1156,102 @@ describe.skipIf(!WSL.usable)('WSL leg: this repo\u2019s resolution code under re
         expect(sha256(report.homedir)).toBe(MEASURED.probeLinux.homedirSha256);
         expect(report.ambiguousSlug.outcome).toBe(MEASURED.probeLinux.ambiguousOutcome);
 
-        // --- G1: WSL's own ~/.claude is exactly as we found it -----------
-        const claudeAfter = wsl([
-          'sh',
-          '-c',
-          'test -d "$HOME/.claude" && echo present || echo absent',
-        ]);
-        expect(claudeAfter).toBe(claudeBefore);
-        expect(claudeAfter).toBe(MEASURED.wsl.claudeDirectoryPresent ? 'present' : 'absent');
+        /*
+         * G1 USED TO BE ASSERTED HERE, against the operator's own
+         * `$HOME/.claude`, and v0.9.0 DoD 9.10 moved it to its own test
+         * below, under a HOME this file creates.
+         *
+         * The recorded reason (0.8.1 gate, F1, user ruling 2026-09-15 (2)):
+         * `MEASURED.wsl.claudeDirectoryPresent` was captured as `false` and
+         * this machine's WSL has had a `~/.claude` since, so the leg went
+         * red for a fact about the MACHINE that no change here can cause or
+         * fix. A home whose contents this test owns answers the question G1
+         * is really asking, and answers it the same way on every machine.
+         */
       }
     },
     180_000,
   );
+
+  /*
+   * v0.9.0 DoD 9.10 — G1 UNDER A HOME THIS TEST OWNS.
+   *
+   * Carried from 0.8.2. The claim is "this code writes nothing under the home
+   * it resolves", and until 0.9.0 it was asserted against the operator’s own
+   * `$HOME/.claude` — so it went red when that directory appeared, for a fact
+   * about the machine (0.8.1 gate F1, user ruling 2026-09-15 (2)).
+   *
+   * A temp home is stronger in BOTH directions. It is the same on every
+   * machine, and it starts EMPTY — so "nothing was written" is a statement
+   * about an empty directory rather than about a directory that already had
+   * what we were looking for. The old form could not tell those apart.
+   */
+  it(
+    'writes nothing under a HOME it is given: the probe leaves a temp home empty',
+    () => {
+      const linuxNode = WSL.linuxNode as string;
+      const bundleLinux = wsl(['wslpath', '-u', forWslpath(BUNDLE)]);
+      const casesLinux = wsl(['wslpath', '-u', forWslpath(CASES_PATH)]);
+
+      // A home inside the distro, made by mktemp so two runs cannot collide.
+      const home = wsl(['mktemp', '-d', '/tmp/agent-deck-home-XXXXXX']);
+      expect(home).toMatch(/^\/tmp\/agent-deck-home-/u);
+
+      try {
+        // EMPTY before. Asserted, not assumed: a `mktemp -d` that silently
+        // returned an existing directory would make everything below vacuous.
+        const before = wsl(['sh', '-c', `ls -A ${home} | wc -l`]);
+        expect(before, 'the temp home was not empty to begin with').toBe('0');
+
+        const raw = wslWithHome(home, [
+          linuxNode,
+          bundleLinux,
+          '--agent-deck-path-probe',
+          casesLinux,
+        ]);
+        const report = JSON.parse(raw) as ProbeReport;
+
+        // The probe really ran under THAT home, or the rest says nothing
+        // about it. This is the non-vacuity control for the whole test.
+        expect(report.homedir).toBe(home);
+        expect(report.rootFromHome.root).toBe(`${home}/.claude/projects`);
+        expect(report.rootFromHome.source).toBe('home');
+
+        // G1: nothing was created, at any depth. `ls -A` counts dotfiles,
+        // which is the whole point — `.claude` is one.
+        const after = wsl(['sh', '-c', `ls -A ${home} | wc -l`]);
+        expect(after, 'the probe created something under the home it was given').toBe('0');
+        const claude = wsl(['sh', '-c', `test -e ${home}/.claude && echo present || echo absent`]);
+        expect(claude).toBe('absent');
+      } finally {
+        // Under /tmp and named by us, so the removal names one path shape and
+        // cannot reach anything else.
+        wsl(['rm', '-rf', home]);
+      }
+    },
+    180_000,
+  );
+
+  it('records whether this machine’s WSL has a ~/.claude, and asserts nothing about it', () => {
+    /*
+     * v0.9.0 DoD 9.10 — the OBSERVATION that replaces the assertion.
+     *
+     * `MEASURED.wsl.claudeDirectoryPresent` is `false`, and that is a fact
+     * about the distro AT CAPTURE TIME in 2026-08 — not a claim about today.
+     * Until 0.9.0 the WSL leg asserted the live directory against it, so the
+     * leg went red the day the operator ran Claude Code inside WSL.
+     *
+     * The state is printed so a gate record says which arm the run was on,
+     * and NOT asserted, because asserting it is the defect this DoD removes.
+     */
+    const live = wsl(['sh', '-c', 'test -d "$HOME/.claude" && echo present || echo absent']);
+    expect(['present', 'absent']).toContain(live);
+    console.log(
+      `[pathmatrix] this machine's WSL ~/.claude: ${live} ` +
+        `(fixture recorded at capture time: ` +
+        `${MEASURED.wsl.claudeDirectoryPresent ? 'present' : 'absent'})`,
+    );
+  }, 60_000);
 
   it(
     'the CODEX data root under real Linux Node: $HOME/.codex, CODEX_HOME, and the USERPROFILE decoy that must not move it',

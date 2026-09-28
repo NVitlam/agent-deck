@@ -67,6 +67,7 @@ import type {
 import { isAgentNode } from './events.js';
 import { inputHash } from '../stats/canonical.js';
 import { filePathOf } from '../stats/toolclass.js';
+import { skillNameOf } from '../stats/skills.js';
 import type {
   AmbiguousAttribution,
   AttributionReport,
@@ -344,6 +345,8 @@ interface ToolCall {
   inputHash: string;
   /** DoD 1.3 — from the generated census table, or absent. */
   filePath?: string;
+  /** DoD 9.3 — the `Skill` call’s one named input key, or absent. */
+  skillName?: string;
   startedAt?: number;
   resultPreview?: string;
   endedAt?: number;
@@ -774,6 +777,10 @@ function scanEntries(acc: AgentAccumulator, entries: readonly TranscriptEntry[],
         };
         const touched = filePathOf('cc', toolName, b.input);
         if (touched !== undefined) call.filePath = touched;
+        // DoD 9.3 — the same structural read, one named key, on the same
+        // untruncated input the hash above was taken over.
+        const skill = skillNameOf('cc', toolName, b.input);
+        if (skill !== undefined) call.skillName = skill;
         if (at !== undefined) call.startedAt = at;
         acc.calls.push(call);
         acc.byId.set(b.id, call);
@@ -1106,6 +1113,11 @@ export class TreeGrafter {
       const series = usageSeries(acc);
       if (series.length > 0) node.usageSeries = series;
       if (acc.model !== undefined) node.model = acc.model;
+      // DoD 9.2 — the TYPE alone, never the description. `labelFor` above
+      // joins the two into prose; this reads the safe half off the same
+      // sidecar rather than splitting that string back apart.
+      const metaType = sidecar?.meta?.agentType;
+      if (typeof metaType === 'string' && metaType !== '') node.agentType = metaType;
       if (acc.compactions.length > 0) node.compactions = acc.compactions;
       if (spawn?.endedAt !== undefined) node.endedAt = spawn.endedAt;
       return node;
@@ -1186,6 +1198,10 @@ export class TreeGrafter {
       ordinal: call.order,
     };
     if (call.filePath !== undefined) node.filePath = call.filePath;
+    // DoD 9.3 - carried across the same seam as filePath. This mapping copies
+    // fields by name, so a field added to ToolCall and not to this line is
+    // silently dropped: the recorded module-boundary seam class.
+    if (call.skillName !== undefined) node.skillName = call.skillName;
     if (resultPreview !== undefined) node.resultPreview = resultPreview;
     /*
      * v0.8.0 Phase 7, DoD 7.1 (F14). The two operands are emitted as well as

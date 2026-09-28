@@ -18,7 +18,7 @@ import { resolve } from 'node:path';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { SessionState, WebviewToHostMessage } from '../src/model/events.js';
 import type { WebviewHarness } from './testkit.js';
-import { all, loadHarness } from './testkit.js';
+import { all, loadHarness, viewControls } from './testkit.js';
 import {
   INTERACTIVE_TOOL_NAMES,
   WAITING_ON_YOU_LABEL,
@@ -46,7 +46,7 @@ function renderList(state: SessionState): HTMLElement {
   const sent: WebviewToHostMessage[] = [];
   const started = harness.start(container, { postMessage: (m) => sent.push(m) });
   harness.flushSync(() => {
-    started.store.setViewMode('list');
+    started.store.handleMessage(viewControls({ renderer: 'list' }));
   });
   harness.flushSync(() => {
     globalThis.dispatchEvent(new MessageEvent('message', { data: { type: 'snapshot', sessions: [state] } }));

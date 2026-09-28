@@ -16,8 +16,11 @@ import { graftSession } from '../model/graft.js';
 import { LivenessEngine } from '../model/liveness.js';
 import { slugifyWorkspace } from '../parser/tailer.js';
 import { applySessionPatch } from './apply.js';
+import { CONTROL_COMMANDS } from '../view/controls.js';
+import { ABOUT_LINKS } from '../about.js';
 import {
   SessionBridge,
+  WEBVIEW_TO_HOST_TYPES,
   isWebviewToHostMessage,
   type HostToWebviewPort,
 } from './messages.js';
@@ -797,5 +800,219 @@ describe('isWebviewToHostMessage — parked is outbound only', () => {
     };
     expect(isWebviewToHostMessage(message)).toBe(true);
     expect('parked' in message).toBe(true);
+  });
+});
+
+describe('WEBVIEW_TO_HOST_TYPES is bound to the guard it describes', () => {
+  /*
+   * v0.9.0 DoD 9.14, and it is a mutation finding rather than a plan item.
+   *
+   * The mutation was `'runCommand'` back in the list. Both suites stayed
+   * GREEN — correctly, because the guard's `switch` has no case for it and
+   * falls to `default: return false`. Measuring that is what showed the
+   * list had NO READERS AT ALL: an exported constant that claims to be the
+   * inbound grammar, and nothing anywhere compared it to the grammar.
+   *
+   * That is the `CANVAS_CONTRACT_VERSION` shape a verifier round already
+   * caught once — a constant introduced already-satisfied. These two tests
+   * are the binding, in both directions: a type listed with no case is red,
+   * and a case with no listing is red.
+   */
+  /** One well-formed message per listed type. */
+  const SAMPLES: Readonly<Record<string, unknown>> = {
+    expandNode: { type: 'expandNode', sessionId: 's1', nodeId: 'n1' },
+    selectSession: { type: 'selectSession', sessionId: 's1' },
+    resyncRequest: { type: 'resyncRequest', reason: 'because' },
+    // v0.9.0 DoD 9.18. The command is one the TABLE holds; see the tests
+    // below for the other half, which is that one it does not is refused.
+    runCommand: { type: 'runCommand', command: 'agentDeck.open' },
+    drawerState: { type: 'drawerState', open: true },
+    // v0.9.0 DoD 9.29–9.32: the About and Insights surfaces' intents.
+    aboutLink: { type: 'aboutLink', index: 0 },
+    insightsGet: { type: 'insightsGet' },
+    // v0.9.0 DoD 9.40: "Show raw output" — no payload.
+    insightsRawOutput: { type: 'insightsRawOutput' },
+    // v0.9.0 DoD 9.46, 9.47: the report list and Export. (`insightsRun` is
+    // gone, and the test below holds that it is refused.)
+    insightsSelect: { type: 'insightsSelect', runId: 'run-2026-09-21.1' },
+    insightsExport: { type: 'insightsExport', target: 'html' },
+    insightsExportBatch: { type: 'insightsExportBatch', runIds: ['run-1', 'run-2'] },
+    // v0.9.0 DoD 9.54: Investigate Report — no payload, the host's selection.
+    insightsInvestigate: { type: 'insightsInvestigate' },
+  };
+
+  it('DoD 9.46: the removed Run intent is refused like any unknown type', () => {
+    expect(isWebviewToHostMessage({ type: 'insightsRun' })).toBe(false);
+  });
+
+  it('DoD 9.46/9.47: a run id must match the id pattern; a target is one of three; a batch is 1..50 distinct ids', () => {
+    for (const target of ['html', 'markdown', 'copy']) {
+      expect(isWebviewToHostMessage({ type: 'insightsExport', target }), target).toBe(true);
+    }
+    const bad: unknown[] = [
+      { type: 'insightsSelect' },
+      { type: 'insightsSelect', runId: '' },
+      { type: 'insightsSelect', runId: '<img src=x>' },
+      { type: 'insightsSelect', runId: 'r'.repeat(129) },
+      { type: 'insightsSelect', runId: 7 },
+      { type: 'insightsExport' },
+      { type: 'insightsExport', target: 'pdf' },
+      { type: 'insightsExport', target: 'HTML' },
+      { type: 'insightsExportBatch' },
+      { type: 'insightsExportBatch', runIds: [] },
+      { type: 'insightsExportBatch', runIds: 'run-1' },
+      { type: 'insightsExportBatch', runIds: ['run-1', 'run-1'] },
+      { type: 'insightsExportBatch', runIds: ['run-1', 'bad id'] },
+      { type: 'insightsExportBatch', runIds: [1] },
+      { type: 'insightsExportBatch', runIds: Array.from({ length: 51 }, (_, i) => `run-${String(i)}`) },
+    ];
+    for (const message of bad) expect(isWebviewToHostMessage(message), JSON.stringify(message)).toBe(false);
+    // The cap is fifty, the list's own cap: fifty distinct ids pass.
+    expect(
+      isWebviewToHostMessage({
+        type: 'insightsExportBatch',
+        runIds: Array.from({ length: 50 }, (_, i) => `run-${String(i)}`),
+      }),
+    ).toBe(true);
+    // A hole in the array is not an id: read by index, it is absent.
+    const sparse: unknown[] = ['run-1'];
+    sparse[2] = 'run-3';
+    expect(isWebviewToHostMessage({ type: 'insightsExportBatch', runIds: sparse })).toBe(false);
+  });
+
+  it('`aboutLink` accepts an integer INSIDE the four links, and nothing else', () => {
+    // The host's next act is to ask to open a url, so the renderer names one
+    // of our links by index and can never bring a url of its own.
+    for (let index = 0; index < ABOUT_LINKS.length; index += 1) {
+      expect(isWebviewToHostMessage({ type: 'aboutLink', index }), String(index)).toBe(true);
+    }
+    for (const bad of [
+      { type: 'aboutLink', index: ABOUT_LINKS.length },
+      { type: 'aboutLink', index: -1 },
+      { type: 'aboutLink', index: 1.5 },
+      { type: 'aboutLink', index: '0' },
+      { type: 'aboutLink', index: Number.NaN },
+      { type: 'aboutLink' },
+      { type: 'aboutLink', url: 'https://example.invalid/' },
+    ]) {
+      expect(isWebviewToHostMessage(bad), JSON.stringify(bad)).toBe(false);
+    }
+  });
+
+  it('every listed type has a case that accepts a well-formed message', () => {
+    expect(Object.keys(SAMPLES).sort()).toStrictEqual([...WEBVIEW_TO_HOST_TYPES].sort());
+    for (const type of WEBVIEW_TO_HOST_TYPES) {
+      expect(SAMPLES[type], `no sample for ${type}`).toBeDefined();
+      expect(isWebviewToHostMessage(SAMPLES[type]), type).toBe(true);
+    }
+  });
+
+  it('a type the list does not carry is refused, whatever it looks like', () => {
+    /*
+     * `updateTweak` stays gone: a tweak is written by its COMMAND now, so a
+     * renderer naming a settings key has no route at all.
+     *
+     * `runCommand` came BACK in DoD 9.18, and this test's own history is the
+     * argument for what changed. It was removed on the reading that the dead
+     * About button was the message's fault; it was the LIST's fault. So the
+     * type is listed again and the refusal moved down a level — see the
+     * allow-list tests below.
+     */
+    for (const gone of [
+      { type: 'updateTweak', key: 'followNewSessions', value: true },
+      { type: 'runTweak', key: 'x' },
+      { type: 'openExternal', url: 'https://example.invalid' },
+    ]) {
+      expect(isWebviewToHostMessage(gone), JSON.stringify(gone)).toBe(false);
+      expect([...WEBVIEW_TO_HOST_TYPES], JSON.stringify(gone)).not.toContain(
+        (gone as { type: string }).type,
+      );
+    }
+  });
+
+  /* ---------------------------------------------------------------------- *
+   * The ONE allow-list (DoD 9.18)
+   * ---------------------------------------------------------------------- */
+
+  it('`runCommand` accepts every id in the table and NOTHING else', () => {
+    /*
+     * THE DEFECT THIS DELTA EXISTS AROUND, asserted where it happened.
+     *
+     * v0.9.0's guard validated a `runCommand` against the SIDEBAR's
+     * five-entry menu list while the panel rendered a different set, so
+     * `agentDeck.about` and `agentDeck.insights` were dropped HERE and the
+     * handler that allowed them was unreachable. Two dead buttons, one line.
+     *
+     * Both directions, over the whole table: every command a surface can
+     * render is accepted, and an id outside the table is refused. A command
+     * cannot be renderable and unacceptable, by construction.
+     */
+    for (const entry of CONTROL_COMMANDS) {
+      expect(
+        isWebviewToHostMessage({ type: 'runCommand', command: entry.command }),
+        entry.command,
+      ).toBe(true);
+    }
+    // The one that was dead, by name, so the regression has a witness. (Its
+    // sibling `agentDeck.insights.get` left the table in DoD 9.28 — the
+    // Insights tab is gone — and is refused now like any id outside it.)
+    expect(isWebviewToHostMessage({ type: 'runCommand', command: 'agentDeck.about' })).toBe(true);
+    expect(
+      isWebviewToHostMessage({ type: 'runCommand', command: 'agentDeck.insights.get' }),
+    ).toBe(false);
+
+    for (const outside of [
+      'workbench.action.closeWindow',
+      'workbench.action.terminal.kill',
+      'agentDeck',
+      'agentDeck.',
+      'agentDeck.nope',
+      'AGENTDECK.OPEN',
+      ' agentDeck.open',
+      'agentDeck.open ',
+    ]) {
+      expect(
+        isWebviewToHostMessage({ type: 'runCommand', command: outside }),
+        outside,
+      ).toBe(false);
+    }
+  });
+
+  it('`runCommand` refuses every shape that is not a command id', () => {
+    for (const bad of [
+      { type: 'runCommand' },
+      { type: 'runCommand', command: '' },
+      { type: 'runCommand', command: 42 },
+      { type: 'runCommand', command: null },
+      { type: 'runCommand', command: ['agentDeck.open'] },
+      { type: 'runCommand', command: { toString: () => 'agentDeck.open' } },
+    ]) {
+      expect(isWebviewToHostMessage(bad), JSON.stringify(bad)).toBe(false);
+    }
+    // An accessor is not a JSON shape, and a getter that throws must not take
+    // the guard down with it.
+    const hostile = { type: 'runCommand' };
+    Object.defineProperty(hostile, 'command', {
+      get() {
+        throw new Error('no');
+      },
+      enumerable: true,
+    });
+    expect(isWebviewToHostMessage(hostile)).toBe(false);
+  });
+
+  it('`drawerState` takes a boolean and nothing else', () => {
+    expect(isWebviewToHostMessage({ type: 'drawerState', open: true })).toBe(true);
+    expect(isWebviewToHostMessage({ type: 'drawerState', open: false })).toBe(true);
+    // No truthiness: the host's next act is to state it to a second surface.
+    for (const bad of [
+      { type: 'drawerState' },
+      { type: 'drawerState', open: 'true' },
+      { type: 'drawerState', open: 1 },
+      { type: 'drawerState', open: 0 },
+      { type: 'drawerState', open: null },
+    ]) {
+      expect(isWebviewToHostMessage(bad), JSON.stringify(bad)).toBe(false);
+    }
   });
 });

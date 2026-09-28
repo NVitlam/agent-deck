@@ -21,6 +21,7 @@
 import corpora from 'virtual:wire-corpus';
 
 import type { HostToWebviewMessage, WebviewToHostMessage } from '../../src/model/events.js';
+import { viewModeOf } from '../../src/view/controls.js';
 import { start } from '../main.js';
 import type { WireCorpus, WireEvent } from './corpus-types.js';
 import { createReplay } from './replay.js';
@@ -67,8 +68,17 @@ function describe(message: HostToWebviewMessage): string {
       return `statsStore (${message.records.length} records, ${message.enabled ? 'enabled' : 'disabled'})`;
     case 'settings':
       return `settings (autoFit ${message.canvasAutoFit ? 'on' : 'off'})`;
-    case 'showView':
-      return `showView ${message.mode}`;
+    case 'viewControls':
+      return `viewControls ${viewModeOf(message.controls)}`;
+    case 'viewAction':
+      return `viewAction ${message.action}`;
+    case 'sidebarState':
+      // The theater replays the PANEL's traffic; a sidebar message reaching
+      // it is a recording of the wrong surface, and the line says so rather
+      // than the switch falling through to `undefined`.
+      return 'sidebarState (not a panel message)';
+    case 'providerState':
+      return `providerState (${message.provider === null ? 'free' : 'provider registered'})`;
   }
 }
 

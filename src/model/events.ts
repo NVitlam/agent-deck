@@ -14,6 +14,7 @@
 // only events.ts" guard is about what a CSP-strict bundle can reach, which
 // this does not change.
 import type { StatsRecord } from '../stats/schema.js';
+import type { ViewControls } from '../view/controls.js';
 
 // ---------------------------------------------------------------------------
 // (a) Domain model — session tree held in the extension host
@@ -583,6 +584,23 @@ export interface AgentNode {
   label: string; // meta.agentType + meta.description
   status: 'running' | 'done' | 'error';
   spawnDepth: number; // from meta.json; 0 for main
+  /**
+   * The sidecar’s `meta.agentType`, on its own field — v0.9.0 DoD 9.2.
+   *
+   * {@link AgentNode.label} is `agentType + ": " + description` and the
+   * description half is prose written by whoever spawned the agent. Layer 1
+   * exports the TYPE and never the description, so the type is carried here
+   * rather than recovered by splitting the label: a split is a rule about a
+   * separator, and a description containing ": " would hand the exporter
+   * prose. `src/stats/schema.ts` excludes the label outright for the same
+   * reason.
+   *
+   * From the `<sessionId>/subagents/agent-<agentId>.meta.json` sidecar,
+   * joined by `toolUseId` — the primary-key join, never an inference.
+   * Absent on `main`, which has no sidecar, and absent where a sidecar
+   * states none.
+   */
+  agentType?: string;
   children: (AgentNode | ToolNode)[];
   /**
    * This agent's context level: its own last assistant message by ordinal.
@@ -702,6 +720,21 @@ export interface ToolNode {
    * `UNAVAILABLE:codex`.
    */
   filePath?: string;
+  /**
+   * The skill this call invoked, for a `Skill` call — v0.9.0 DoD 9.3.
+   *
+   * Read from ONE named key of the structured input (`skill`), by exactly
+   * the rule {@link ToolNode.filePath} follows: structure, never text, and
+   * no regex over any value. `src/stats/skills.ts` is the definition and
+   * binds itself to the generated census rather than restating it.
+   *
+   * The sibling key `args` is the user’s own prose and is never read here,
+   * never hashed for this purpose and never exported.
+   *
+   * Absent on every call that is not a `Skill` call, and on a `Skill` call
+   * whose input states no name.
+   */
+  skillName?: string;
   /**
    * SHA-256 over canonical JSON of the **untruncated** structured input —
    * DoD 1.2. `src/stats/canonical.ts` is the definition.
@@ -918,6 +951,8 @@ export interface SessionFieldPatch {
 export interface AgentNodeFieldPatch {
   kind?: AgentNode['kind'];
   label?: string;
+  /** v0.9.0 DoD 9.2. `null` = cleared. */
+  agentType?: string | null;
   status?: AgentNode['status'];
   spawnDepth?: number;
   /** Replaced whole; `prompt` and `output` are never patched apart. */
@@ -943,6 +978,8 @@ export interface AgentNodeFieldPatch {
 /** A change to a `ToolNode`'s scalars. `null` = cleared; see {@link AgentNodeFieldPatch}. */
 export interface ToolNodeFieldPatch {
   toolName?: string;
+  /** v0.9.0 DoD 9.3. `null` = cleared. */
+  skillName?: string | null;
   status?: ToolNode['status'];
   inputPreview?: string;
   resultPreview?: string | null;
@@ -1166,17 +1203,364 @@ export interface SettingsMessage {
    * untrusted input arrives.
    */
   tweaks: Readonly<Record<string, boolean | string>>;
+  /**
+   * `agentDeck.livenessThresholdMs`, as the host last read it — v0.9.0 DoD
+   * 9.38. The free Insights view counts a long-idle resume against it (spec
+   * `Amendment 2026-09-21 — Site: Insights subpage and plans`). REQUIRED, so
+   * a producer that forgets it breaks at compile time rather than letting the
+   * renderer fall back to the default without saying so.
+   */
+  livenessThresholdMs: number;
 }
 
 /**
- * The host asks the panel to show one of its view modes (v0.7.0 Phase 4,
- * DoD 4.6b). `agentDeck.openStats` opens the panel and sends `stats`; nothing
- * else sends this. View mode stays webview-local UI state — this is a
- * REQUEST from the host, not a value the host owns.
+ * The host stating every view-control value — v0.9.0 DoD 9.14 (spec
+ * `Amendment 2026-09-20`).
+ *
+ * **THIS REPLACES `showView`, and the replacement is the point.** Under the
+ * amendment no webview surface carries a control, so the renderer has no way
+ * to change a filter, a layout, a sort, a tab or a mode — the host owns every
+ * one of them, a command moves it, and this message is how the renderer hears.
+ * `showView` was a REQUEST about one field; this is the whole state, so the
+ * two sides cannot hold different answers to "which tab is showing".
+ *
+ * Sent when a surface is created, on every reload, and after every control
+ * command. THE WHOLE VALUE EVERY TIME, never a delta: a partial update needs
+ * both sides to agree about what "unchanged" means, and a value with two
+ * owners is the defect class this repository has paid for twice.
  */
-export interface ShowViewMessage {
-  type: 'showView';
-  mode: 'canvas' | 'list' | 'stats';
+export interface ViewControlsMessage {
+  type: 'viewControls';
+  controls: ViewControls;
+}
+
+/**
+ * The host asking the renderer to DO something — v0.9.0 DoD 9.14.
+ *
+ * Two, and the union is closed. They are here rather than as fields on
+ * {@link ViewControlsMessage} because neither is a VALUE: "reset the view" and
+ * "walk back to the deck" are things that happen once, and a state message is
+ * re-sent whenever anything in it moves. An epoch counter would have made them
+ * fit in that message and would have made every reader ask what the number
+ * meant.
+ *
+ * `resetView` acts on the ACTIVE surface (ruling 6: one menu entry, two
+ * spaces), and the store is what knows which is active. `openDeck` is the
+ * other half of ruling 2 — the breadcrumbs are gone, so back is Escape and
+ * this.
+ */
+export interface ViewActionMessage {
+  type: 'viewAction';
+  action: 'resetView' | 'openDeck';
+}
+
+/**
+ * Everything the SIDEBAR draws, as one message — v0.9.0 DoD 9.17.
+ *
+ * **ONE MESSAGE, because the sidebar is one render of one moment.** It needs
+ * four facts: what every control is set to, what the three tweaks are set to,
+ * whether Insights is installed, and whether a drawer is open. Four messages
+ * would let four of its lines describe four different instants — the same
+ * argument `InsightsSection` carried when the sidebar was a tree — and the
+ * user would see a tick that disagreed with the panel beside it.
+ *
+ * Sent when the view is created, on every reload (the new document knows
+ * nothing), after every control command, on every configuration change, when
+ * the panel reports its drawer opening or closing, and when an Insights
+ * provider registers or goes away.
+ *
+ * `drawerOpen` is what makes View ▸ Inspector appear and disappear, and it is
+ * the PANEL's fact: the host learns it from {@link DrawerStateMessage} and
+ * relays it. The sidebar cannot ask the panel directly — they are two
+ * documents — and the host is the only party that sees both.
+ */
+export interface SidebarStateMessage {
+  type: 'sidebarState';
+  controls: ViewControls;
+  /**
+   * The three `src/sidebar/tweaks.ts` settings, keyed WITHOUT the
+   * `agentDeck.` prefix, as the host read them.
+   *
+   * Typed structurally rather than imported from `tweaks.ts`, for the reason
+   * {@link SettingsMessage} gives about the same record.
+   */
+  tweaks: Readonly<Record<string, boolean | string>>;
+  /**
+   * The registered Insights provider's about, or `null` — v0.9.0 DoD 9.31.
+   *
+   * It replaced `insightsInstalled`. Spec `Amendment 2026-09-21 — One
+   * window`: **"Installed" is never consulted by the UI; the only state is
+   * "provider registered or not"**, read from the HOST, so the sidebar says
+   * the same thing with the panel open or closed. The own-eyes pass on
+   * `160e448` found the sidebar wrong with the panel closed.
+   */
+  provider: InsightsProviderAbout | null;
+  /**
+   * The registered provider's optional actions, in the Menu's order — v0.9.0
+   * DoD 9.45. Each is a row under Open Insights, shown only while the
+   * provider has it; empty when no provider is registered.
+   */
+  insightsActions: InsightsProviderAction[];
+  drawerOpen: boolean;
+}
+
+/* ------------------------------------------------------------------------ *
+ * API v2 — the Insights provider's view types (v0.9.0 DoD 9.30, 9.40)
+ * ------------------------------------------------------------------------ *
+ *
+ * Spec `Amendment 2026-09-21 — One window, Insights provider, Menu-only
+ * entry`, WIDENED by `Amendment 2026-09-22 — Provider contract v1 widened
+ * (pre-publish; API_VERSION stays 2)`. A provider registers through
+ * `registerInsightsProvider` on the extension API and the parent RENDERS what
+ * it returns. These are the types it returns, defined in the PARENT, and they
+ * are plain JSON.
+ *
+ * ## What the widening changed, and why
+ *
+ * Until 2026-09-22 a finding was its kind, its confidence and numeric
+ * evidence, and no text crossed: every word about a finding was the parent's
+ * own. The Insights repository built against that and found it cannot render
+ * a report — a finding with no action says nothing anyone can act on. So a
+ * finding now carries the provider's TEXT: an action (a lead of at most 15
+ * words and a detail), a cause, and labelled evidence.
+ *
+ * **EVERY STRING IS STILL ALLOW-LISTED AND LENGTH-CAPPED.**
+ * `src/insights-provider.ts` checks every value a provider returns: an
+ * enumeration against its list, an id or a stats key against its pattern,
+ * and every text against one of three classes — a NAME (64 characters), a
+ * PATH (1,024) or FREE TEXT (2,000), with no control or format character
+ * (Unicode Cc, Cf — zero-width and bidirectional characters among them) in
+ * any of them. A string evidence value is admitted
+ * only on a stats key the store itself allow-lists as a string. A value that
+ * fails is DROPPED AND COUNTED, never truncated and never repaired.
+ */
+
+/** A finding's kind. The same eight Insights' validator names. */
+export type InsightsFindingKind =
+  | 're-read-loop'
+  | 'churn-chain'
+  | 'context-churn'
+  | 'stall'
+  | 'silent-subagent'
+  | 'compaction'
+  | 'cache-miss'
+  | 'other';
+
+export type InsightsConfidence = 'low' | 'medium' | 'high';
+
+/** The agent CLI a run used. */
+export type InsightsAgentKind = 'claude' | 'codex';
+
+/**
+ * What a run came to: `ok` (it produced findings), `empty` (it read the
+ * window and found nothing) or `refused` (it stopped at a step and says why).
+ */
+export type InsightsRunState = 'ok' | 'empty' | 'refused';
+
+/** A finding against the run before it. `null` when the provider cannot say. */
+export type FindingSinceLastRun = 'new' | 'still' | 'resolved';
+
+/**
+ * One piece of evidence: a label, the session it is about, a path into that
+ * session's Layer 1 record, and the value there.
+ *
+ * A STRING value is admitted only where the store itself allows a string —
+ * `STATS_STRING_FIELDS` or `STATS_SCOPED_STRING_FIELDS` in
+ * `src/stats/schema.ts`, judged on the key the path ends in — and under a cap:
+ * the store's where it has one (`filePath` 1,024; `agentType` and a skill's
+ * `name` 64), else the path cap for `projectSlug` and the name cap for any
+ * other key. Anywhere else a string drops the finding.
+ */
+export interface FindingEvidenceView {
+  /** A NAME: at most 64 characters, one line. */
+  label: string;
+  /** The session the value is from. An id. */
+  sessionId: string;
+  /** `sessions[0].totals.compactions`-shaped. Checked against a strict pattern. */
+  statsKey: string;
+  value: number | string;
+}
+
+/** What to do about a finding: a short lead, and the detail behind it. */
+export interface FindingActionView {
+  /** At most 15 words, one line, imperative. */
+  lead: string;
+  /**
+   * FREE TEXT, at most 2,000 characters, shown behind an expand — or the
+   * EMPTY STRING, for a one-sentence action (round 5b, 2026-09-22), which
+   * shows no expand at all.
+   */
+  detail: string;
+}
+
+export interface FindingView {
+  /** The provider's id for this finding. An id, unique within its set. */
+  id: string;
+  kind: InsightsFindingKind;
+  confidence: InsightsConfidence;
+  action: FindingActionView;
+  /** FREE TEXT, at most 2,000 characters. */
+  cause: string;
+  evidence: FindingEvidenceView[];
+  sinceLastRun: FindingSinceLastRun | null;
+}
+
+/** Why a run was refused: the step it stopped at, and the reason. */
+export interface FindingSetRefusalView {
+  /** A NAME: at most 64 characters, one line. */
+  step: string;
+  /** FREE TEXT, at most 2,000 characters. */
+  reason: string;
+}
+
+/** The latest finding set, as the provider states it. */
+export interface FindingSetView {
+  /**
+   * The run this set is from — an id, `[A-Za-z0-9._:-]`, 1 to 128 characters.
+   * By the ruling of 2026-09-22 (round 5, ruling 1), "Show raw output" asks
+   * the provider for THIS id; nothing is matched on `createdAt`.
+   */
+  runId: string;
+  /** Epoch milliseconds. */
+  createdAt: number;
+  /** The agent CLI the run used, and its version. */
+  agent: { kind: InsightsAgentKind; version: string };
+  /** The window the run read: how many sessions, how many excluded, since when. */
+  window: { sessions: number; excluded: number; sinceMs: number };
+  /** What the run itself cost, as the agent reported it, or `null`. */
+  usage: { prompt: number; output: number; costUsd?: number } | null;
+  /**
+   * Kinds present in the previous set and absent now — round 5b,
+   * 2026-09-22. Each is checked against the eight finding kinds; the surface
+   * says "No longer reported: <kinds>" when any remain.
+   */
+  resolvedKinds: string[];
+  /** Empty unless `state` is `ok`. */
+  findings: FindingView[];
+  /** How many findings the provider's own validator rejected. */
+  rejected: number;
+  state: InsightsRunState;
+  /** Present exactly when `state` is `refused`. */
+  refusal?: FindingSetRefusalView;
+}
+
+/** One run in the history list. */
+export interface RunSummary {
+  runId: string;
+  createdAt: number;
+  state: InsightsRunState;
+  /** How many findings the run produced: at least 1 when `ok`, else 0. */
+  findings: number;
+  agentKind: InsightsAgentKind;
+}
+
+/** The provider's name and version, as About and the sidebar state them. */
+export interface InsightsProviderAbout {
+  /** Letters, digits, spaces and `._-`, 1 to 64 characters. */
+  name: string;
+  /** `1.2.3`-shaped, optionally with a `-prerelease` tag. */
+  version: string;
+  /**
+   * OPTIONAL — one line under the name, e.g. "licensed until 2027-09-23"
+   * (spec `Amendment 2026-09-23`). A NAME by the text classes: one line, at
+   * most 64 characters. Absent when the provider states none or it failed
+   * the check.
+   */
+  status?: string;
+}
+
+/**
+ * A provider's optional actions — spec `Amendment 2026-09-23`. Each is a
+ * sidebar row under Open Insights, shown only while the registered provider
+ * has it, and each calls that method and nothing else.
+ */
+export type InsightsProviderAction = 'pickAgent' | 'showPayload' | 'clearHistory';
+
+/**
+ * The run the user selected in the report list, as the host read it through
+ * `getRun(runId)` — v0.9.0 DoD 9.46.
+ */
+export interface InsightsRunPreview {
+  /** The run selected. Always one the current list holds. */
+  runId: string;
+  /**
+   * The checked set, or `null` — the provider answered `null`, threw, or
+   * returned a set that failed the check or named another run.
+   */
+  set: FindingSetView | null;
+  /** Values of this set that failed the check and were dropped. */
+  dropped: number;
+  /**
+   * True when the preview may offer "Show raw output": the provider has the
+   * optional `getRawOutput` and the set is `refused` (DoD 9.40, asked now for
+   * the SELECTED run). When false on a refused set, the surface says "No raw
+   * output for this run." (ruling of 2026-09-22, 4).
+   */
+  rawOutput: boolean;
+  /**
+   * True when the preview's header may offer "Investigate Report": the
+   * provider had the optional `investigate` when it registered — v0.9.0 DoD
+   * 9.54 (spec `Amendment 2026-09-24 — Investigate Report`). REQUIRED, so a
+   * producer that forgets it breaks at compile time rather than defaulting.
+   */
+  investigate: boolean;
+}
+
+/**
+ * What the Insights surface is told about a registered provider — reshaped
+ * by v0.9.0 DoD 9.46 (spec `Amendment 2026-09-23 — Paid Insights surface`).
+ *
+ * The latest set and the running flag were here until then. The surface
+ * shows a REPORT LIST and the SELECTED run instead, and it has no Run action,
+ * so neither is read any more.
+ */
+export interface InsightsProviderSnapshot {
+  about: InsightsProviderAbout;
+  /** The run history, checked, sorted by `createdAt`, newest first. */
+  runs: RunSummary[];
+  /**
+   * How many values `listRuns()` returned that failed the allow-list and were
+   * dropped. Stated on the surface, because a drop nobody can see is how a
+   * silent partial render ships.
+   */
+  dropped: number;
+  /** The selected run's report, or `null` while none is selected. */
+  selected: InsightsRunPreview | null;
+}
+
+/**
+ * Everything the Insights and About surfaces need from the host — v0.9.0
+ * DoD 9.29–9.32.
+ *
+ * ONE MESSAGE, re-sent whole whenever it moves: a provider registering,
+ * changing, running or going away. `provider: null` is the free state.
+ *
+ * The About PAGE rides here too, as text the host built: the introduction,
+ * each link's label and HOST, the Get tile, and the footer with the version.
+ * Never a url. The webview bundle therefore carries no link and no name —
+ * `webview/bundle.test.ts` holds it to zero url literals, and the author's
+ * paragraph stays in the one bundle `vsix.test.ts` enumerates for it. A tile
+ * posts an INDEX and the host, which holds the urls, asks and opens.
+ */
+export interface ProviderStateMessage {
+  type: 'providerState';
+  page: AboutPageView;
+  provider: InsightsProviderSnapshot | null;
+}
+
+/** One About tile as the webview shows it: a label and the host it opens. */
+export interface AboutLinkView {
+  label: string;
+  host: string;
+}
+
+/** The About page, built by the host (`src/about.ts` `aboutPage`). */
+export interface AboutPageView {
+  text: string;
+  links: AboutLinkView[];
+  /** The lit "Get Agent Deck Insights" tile, shown while no provider is registered. */
+  get: AboutLinkView;
+  footer: string;
 }
 
 export type HostToWebviewMessage =
@@ -1187,7 +1571,10 @@ export type HostToWebviewMessage =
   | StatsSnapshotMessage
   | StatsStoreMessage
   | SettingsMessage
-  | ShowViewMessage;
+  | ViewControlsMessage
+  | ViewActionMessage
+  | SidebarStateMessage
+  | ProviderStateMessage;
 
 export interface ExpandNodeMessage {
   type: 'expandNode';
@@ -1230,14 +1617,29 @@ export interface ResyncRequestMessage {
 }
 
 /**
- * The SIDEBAR asking the host to run one of its menu commands (v0.7.0 Phase 4,
- * DoD 4.6b).
+ * A surface asking the host to run one of ITS OWN commands — v0.9.0 DoD 9.18.
  *
- * `command` is a member of `src/sidebar/menu.ts`'s list and nothing else: the
- * guard in `bridge/messages.ts` refuses any other string, so the sidebar
- * cannot be turned into a way of running arbitrary commands by a message that
- * merely looks like one of its own. The PANEL ignores this message entirely;
- * only the sidebar's controller executes it.
+ * ## This message was deleted eight hours ago, and bringing it back is the fix
+ *
+ * v0.9.0 DoD 9.14 removed `runCommand` outright, on the reading that the dead
+ * About button was the message's fault. It was not. The message was fine; the
+ * GUARD was validating it against the sidebar's five-entry menu list while
+ * the panel rendered a different set, so `agentDeck.about` and
+ * `agentDeck.insights` were dropped at the boundary and the arm that allowed
+ * them could not be reached. Removing the mechanism removed the defect and
+ * also removed the sidebar, which the user then rejected as too long and
+ * unexplained.
+ *
+ * So it is back, with the thing that was actually wrong fixed: **there is one
+ * list**, `CONTROL_COMMANDS`, and `isControlCommand` is the only question the
+ * boundary asks. `package.json` contributes that list, the sidebar renders
+ * it, `activate()` registers it, and `controls.test.ts` holds all four
+ * against each other. A command cannot be renderable and unacceptable.
+ *
+ * `command` is not free text at the boundary: an id that is not in the table
+ * is rejected there, so a renderer can name one of OUR commands or nothing at
+ * all. That is the same shape `aboutLinkFor` uses for a url — the renderer
+ * names an entry, never a value.
  */
 export interface RunCommandMessage {
   type: 'runCommand';
@@ -1245,24 +1647,107 @@ export interface RunCommandMessage {
 }
 
 /**
- * The TWEAKS panel asking the host to write one setting (v0.8.0 Phase 7,
- * DoD 7.6).
+ * The panel telling the host whether a drawer is open — v0.9.0 DoD 9.17.
  *
- * `key` is a member of `src/sidebar/tweaks.ts`'s list and `value` is a value
- * that member may take — both checked by `isTweakKey`/`isTweakValue` in the
- * `bridge/messages.ts` guard, at the boundary, BEFORE the host calls
- * `WorkspaceConfiguration.update`. The host writes into the user's settings
- * on the strength of this message, so a string that merely looks like a key
- * must not reach that call.
+ * A STATE REPORT, not a command: it says what the renderer is showing, the
+ * way `selectSession` and `expandNode` already do, and the host does nothing
+ * with it but relay it to the sidebar so View ▸ Inspector can appear beside a
+ * drawer and be absent without one.
  *
- * The PANEL ignores this message entirely; only the sidebar controller acts
- * on it — the same division `runCommand` already has.
+ * Posted on every change and never on a tick, so the host is told when the
+ * answer moves rather than repeatedly told the same answer.
  */
-export interface UpdateTweakMessage {
-  type: 'updateTweak';
-  /** A `TWEAK_SETTINGS` key, without the `agentDeck.` section prefix. */
-  key: string;
-  value: boolean | string;
+export interface DrawerStateMessage {
+  type: 'drawerState';
+  open: boolean;
+}
+
+/**
+ * The About surface's tile was pressed — v0.9.0 DoD 9.32.
+ *
+ * The INDEX, never a url: the renderer names one of the four links this
+ * extension defines (`src/about.ts`) and the host looks it up, asks, and only
+ * then opens it. The guard refuses any index that is not an integer inside
+ * that array.
+ */
+export interface AboutLinkMessage {
+  type: 'aboutLink';
+  index: number;
+}
+
+/**
+ * The "Get Agent Deck Insights" tile was pressed, on the Insights or the
+ * About surface. No payload: there is one page it can open, and the host
+ * holds its url.
+ */
+export interface InsightsGetMessage {
+  type: 'insightsGet';
+}
+
+/*
+ * `InsightsRunMessage` (`insightsRun`) was here until v0.9.0 DoD 9.46. Spec
+ * `Amendment 2026-09-23 — Paid Insights surface` enumerates what the
+ * registered surface may carry and Run is not among it — Send lives in
+ * Insights' own payload preview — so the intent left the wire with the button.
+ */
+
+/**
+ * The preview's "Show raw output" action on a refused run — v0.9.0 DoD 9.40,
+ * asked for the SELECTED run since DoD 9.46. NO PAYLOAD: the host holds the
+ * selection, asks the provider's optional `getRawOutput` for that run, and
+ * opens what comes back as an untitled plain-text document. The renderer
+ * names no run id, for the same reason `aboutLink` names no url.
+ */
+export interface InsightsRawOutputMessage {
+  type: 'insightsRawOutput';
+}
+
+/**
+ * A row of the report list was clicked — v0.9.0 DoD 9.46. The id is checked
+ * at the guard (the id pattern) and again at the host, which acts only on a
+ * run its current list holds, then reads it through `getRun` and re-sends
+ * `providerState` with the preview.
+ *
+ * v0.9.0 DoD 9.52: naming the run ALREADY selected clears the selection, so a
+ * second click on the selected row deselects it. The message is the same one;
+ * the host, which holds the selection, is the party that tells the two apart.
+ */
+export interface InsightsSelectMessage {
+  type: 'insightsSelect';
+  runId: string;
+}
+
+/** What an Export action produces — a file of one format, or the clipboard. */
+export type InsightsExportTarget = 'html' | 'markdown' | 'copy';
+
+/**
+ * One of the preview's three Export actions — v0.9.0 DoD 9.47. It names the
+ * target only: the run is the host's selection, re-read through `getRun` at
+ * the moment of export, never what the renderer holds.
+ */
+export interface InsightsExportMessage {
+  type: 'insightsExport';
+  target: InsightsExportTarget;
+}
+
+/**
+ * "Export ticked (n)" — v0.9.0 DoD 9.47. The ticks are the renderer's, so
+ * the ids travel: each checked at the guard, and at the host against the
+ * current list. The format is asked by the host, after the press.
+ */
+export interface InsightsExportBatchMessage {
+  type: 'insightsExportBatch';
+  runIds: string[];
+}
+
+/**
+ * The preview header's "Investigate Report" — v0.9.0 DoD 9.54. NO PAYLOAD,
+ * like Export: the run is the host's selection, and the host calls the
+ * provider's optional `investigate(runId)` with that id and nothing else.
+ * The parent builds no prompt, spawns nothing and never knows the mode.
+ */
+export interface InsightsInvestigateMessage {
+  type: 'insightsInvestigate';
 }
 
 export type WebviewToHostMessage =
@@ -1270,7 +1755,14 @@ export type WebviewToHostMessage =
   | SelectSessionMessage
   | ResyncRequestMessage
   | RunCommandMessage
-  | UpdateTweakMessage;
+  | DrawerStateMessage
+  | AboutLinkMessage
+  | InsightsGetMessage
+  | InsightsRawOutputMessage
+  | InsightsSelectMessage
+  | InsightsExportMessage
+  | InsightsExportBatchMessage
+  | InsightsInvestigateMessage;
 
 /**
  * One tree op that could not be applied, reported instead of thrown.

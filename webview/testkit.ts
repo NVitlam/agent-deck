@@ -12,6 +12,8 @@
 import type { WebviewToHostMessage } from '../src/model/events.js';
 import type { Store } from './store.js';
 import { ANIMATED_CLASSES } from './canvas-contract.js';
+import type { ViewControls, ViewMode } from '../src/view/controls.js';
+import { DEFAULT_VIEW_CONTROLS } from '../src/view/controls.js';
 
 export interface WebviewHarness {
   start(
@@ -130,6 +132,46 @@ export async function loadHarness(): Promise<WebviewHarness> {
 }
 
 /** All elements carrying a `data-testid`. */
+/**
+ * A `viewControls` message — v0.9.0 DoD 9.14.
+ *
+ * THE ONE WAY A TEST MOVES A CONTROL NOW. Every webview surface is content
+ * only (spec `Amendment 2026-09-20`), so there is nothing to press: a filter,
+ * a layout, a sort, a tab or a mode changes because the host said so, and
+ * this builds what the host sends.
+ *
+ * Spreads `DEFAULT_VIEW_CONTROLS` so a caller states only the field it means
+ * — the message carries the WHOLE state by design, and a test writing nine
+ * fields to change one would be nine chances to write a different default
+ * than the host's.
+ */
+/**
+ * The two control fields that put the panel in one {@link ViewMode}.
+ *
+ * THE INVERSE OF `viewModeOf`, and it is only available to tests because the
+ * inverse is not a function: `stats` says nothing about which renderer is
+ * underneath it, which is exactly the fact the split exists to keep. So this
+ * leaves `renderer` alone for `stats` and a caller that cares states it.
+ *
+ * It exists because roughly sixty call sites say "put the panel in this mode"
+ * and that is still one idea; writing the pair out at each of them would be
+ * sixty chances to write `surface: 'sessions'` and mean it.
+ */
+export function controlsForMode(mode: ViewMode): Partial<ViewControls> {
+  // The three non-session surfaces (v0.9.0 DoD 9.27) leave `renderer` alone,
+  // for the reason `stats` always has.
+  return mode === 'canvas' || mode === 'list'
+    ? { renderer: mode, surface: 'sessions' }
+    : { surface: mode };
+}
+
+export function viewControls(over: Partial<ViewControls> = {}): {
+  type: 'viewControls';
+  controls: ViewControls;
+} {
+  return { type: 'viewControls', controls: { ...DEFAULT_VIEW_CONTROLS, ...over } };
+}
+
 export function all(root: ParentNode, testId: string): HTMLElement[] {
   return [...root.querySelectorAll<HTMLElement>(`[data-testid="${testId}"]`)];
 }

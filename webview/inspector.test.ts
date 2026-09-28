@@ -24,7 +24,10 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { AgentNode, ToolNode } from '../src/model/events.js';
 import { TESTID } from './canvas-contract.js';
 import { COLLAPSED_PREVIEW_CHARS, EM_DASH } from './format.js';
-import { all, one, spawnBundle } from './testkit.js';
+import { all, loadHarness, one, spawnBundle, viewControls } from './testkit.js';
+import type { WebviewHarness } from './testkit.js';
+import type { Store } from './store.js';
+import { liveSession } from './testdata.js';
 import { HEADER_RESERVED_PX, layoutHeader, parseHeaderCss } from './inspector-header.js';
 import type { HeaderFieldText, HeaderLayout } from './inspector-header.js';
 import { agent, longPreview, tool } from './testdata.js';
@@ -103,6 +106,12 @@ beforeAll(async () => {
   const factory = new Function(`${code}\nreturn ${GLOBAL_NAME};`) as () => InspectorHarness;
   harness = factory();
 }, 60_000);
+
+/** The SHIPPED bundle's `start()`, for the through-the-app block at the end. */
+let appHarness: WebviewHarness;
+beforeAll(async () => {
+  appHarness = await loadHarness();
+}, 120_000);
 
 interface Mounted {
   container: HTMLElement;
@@ -479,27 +488,36 @@ describe('accessibility floor (C7.8)', () => {
     expect(panel.getAttribute('aria-label')).toBe('Inspector');
   });
 
-  it('makes the expander and the close control real focusable buttons', () => {
-    let closed = 0;
-    const container = render({
-      node: tool({ id: 't', inputPreview: 'x' }),
-      onclose: () => (closed += 1),
-    });
-    for (const testId of ['inspector-expand', 'inspector-close']) {
-      const button = one(container, testId);
-      expect(button.tagName).toBe('BUTTON');
-      button.focus();
-      expect(document.activeElement).toBe(button);
-    }
-    // The component reports the intent and owns no altitude transition: the
-    // Escape ladder lives in the store (`Store.escape`).
-    click(one(container, 'inspector-close'));
-    expect(closed).toBe(1);
+  it('makes the payload expander a real focusable button', () => {
+    // `inspector-expand` is the expand/collapse of a CONTENT ENTRY — a tool
+    // node's payloads — which spec `Amendment 2026-09-20` names as one of
+    // the two exceptions. It stays, and stays a real button.
+    const container = render({ node: tool({ id: 't', inputPreview: 'x' }) });
+    const button = one(container, 'inspector-expand');
+    expect(button.tagName).toBe('BUTTON');
+    button.focus();
+    expect(document.activeElement).toBe(button);
   });
 
-  it('renders no close control when the caller wires no handler', () => {
-    const container = render({ node: tool({ id: 't', inputPreview: 'x' }) });
+  it('renders NO close control at all — ruling 5 (v0.9.0 DoD 9.14)', () => {
+    /*
+     * The drawer's close button and its expand/collapse are gone. The
+     * behaviours are not: the drawer opens by SELECTING A CALL and closes
+     * with Escape, which `App.svelte` wires to `Store.escape` — and
+     * `onclose`/`ondrawertoggle` are still props, so the component reports
+     * the intent and owns no altitude transition exactly as before.
+     *
+     * Asserted with the handler WIRED, which is the arm that used to render
+     * the button: a test that only checked the unwired case would pass on a
+     * component that still drew one whenever a caller supplied a handler.
+     */
+    const container = render({
+      node: tool({ id: 't', inputPreview: 'x' }),
+      onclose: () => {},
+      ondrawertoggle: () => {},
+    });
     expect(all(container, 'inspector-close')).toHaveLength(0);
+    expect(all(container, 'drawer-expand')).toHaveLength(0);
   });
 });
 
@@ -772,43 +790,51 @@ describe('the drawer’s two heights and its filter row', () => {
     );
   });
 
-  it('renders the filter row ONLY when expanded (§8.6)', () => {
-    // Absent, not hidden: a collapsed drawer must not be filterable by a
-    // control nobody can see.
-    expect(all(render({ node }), TESTID.drawerFilters)).toHaveLength(0);
-    expect(all(render({ node, drawerExpanded: true }), TESTID.drawerFilters)).toHaveLength(1);
+  it('carries no filter row at either height (v0.9.0 DoD 9.14, ruling 5)', () => {
+    // The row held four status chips and two selects until spec
+    // `Amendment 2026-09-20`; all three are View ▸ Inspector entries now, so
+    // there is nothing on this surface to filter it by.
+    for (const drawerExpanded of [false, true]) {
+      const container = render({ node, drawerExpanded });
+      expect(all(container, 'drawer-filters')).toHaveLength(0);
+      expect(all(container, 'drawer-filter-chip')).toHaveLength(0);
+      expect(all(container, 'drawer-order-select')).toHaveLength(0);
+      expect(all(container, 'drawer-tool-select')).toHaveLength(0);
+    }
   });
 
-  it('counts each status on its own chip', () => {
-    const container = render({ node, drawerExpanded: true });
+  it('each status value narrows the list to the calls of that status', () => {
+    // Every arm, or a filter that ignored its input would pass the one that
+    // happens to keep everything.
     const counts = Object.fromEntries(
-      all(container, TESTID.drawerFilterChip).map((chip) => [
-        chip.dataset['filter'],
-        chip.textContent?.replace(/\D+/g, ''),
+      (['all', 'running', 'done', 'error'] as const).map((statusFilter) => [
+        statusFilter,
+        all(render({ node, drawerExpanded: true, statusFilter }), TESTID.actionRow).length,
       ]),
     );
-    expect(counts).toEqual({ all: '3', running: '1', done: '1', error: '1' });
+    expect(counts).toEqual({ all: 3, running: 1, done: 1, error: 1 });
   });
 
   it('shows every call unfiltered while collapsed, whatever the filter says', () => {
-    // §8.6: "Collapsed mode always shows the unfiltered list." Asserted by
-    // filtering in the expanded state and then collapsing, because the filter
-    // is only reachable there — the choice survives, and is ignored.
-    const container = render({ node, drawerExpanded: true });
-    const running = all(container, TESTID.drawerFilterChip).find(
-      (c) => c.dataset['filter'] === 'running',
-    );
-    if (running === undefined) throw new Error('no running chip');
-    click(running);
-    expect(all(container, TESTID.actionRow)).toHaveLength(1);
+    // §8.6: "Collapsed mode always shows the unfiltered list." The filter is
+    // the host's now and survives a collapse, so the sentence is asserted the
+    // way it always meant: the same value, at both heights, two answers.
+    expect(
+      all(render({ node, drawerExpanded: true, statusFilter: 'running' }), TESTID.actionRow),
+    ).toHaveLength(1);
+    expect(
+      all(render({ node, drawerExpanded: false, statusFilter: 'running' }), TESTID.actionRow),
+    ).toHaveLength(3);
   });
 });
 
 /**
  * A9.5 — WHICH END OF THE RUN THE LIST STARTS AT, and following the tail.
  *
- * The order control lives in the filter row, which §8.6 makes exist only in the
- * expanded state, so every test here expands first. `followTail` is asserted
+ * The order is View ▸ Inspector ▸ Order as of v0.9.0 DoD 9.14, so it arrives
+ * as a prop; the tests still expand first, because §8.6's two heights are
+ * unchanged and the expanded one is where a long list is read. `followTail`
+ * is asserted
  * through `data-following` on the list rather than by reading `scrollTop`:
  * jsdom lays nothing out, so `scrollHeight` is 0 and a scroll assertion would
  * be a number nothing produced — the vacuity this repository records most.
@@ -824,25 +850,19 @@ describe('A9.5 — call order, and following the newest call', () => {
   const rowIds = (container: HTMLElement): (string | undefined)[] =>
     all(container, TESTID.actionRow).map((r) => r.dataset['actionId']);
 
-  function setOrder(container: HTMLElement, value: string): void {
-    const select = one(container, TESTID.drawerOrderSelect) as HTMLSelectElement;
-    select.value = value;
-    harness.flushSync(() => {
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-      select.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-  }
+  /*
+   * v0.9.0 DoD 9.14, ruling 5: the order is View ▸ Inspector ▸ Order, so it
+   * arrives as a prop and a test states it at mount. Re-mounting rather than
+   * mutating a select is the honest shape — there is no select.
+   */
 
   it('defaults to the transcript’s own order, oldest first', () => {
     const container = render({ node, drawerExpanded: true });
     expect(rowIds(container)).toStrictEqual(['c1', 'c2', 'c3']);
-    const select = one(container, TESTID.drawerOrderSelect) as HTMLSelectElement;
-    expect(select.value).toBe('oldest');
   });
 
   it('puts the newest call first when asked, without renumbering it', () => {
-    const container = render({ node, drawerExpanded: true });
-    setOrder(container, 'newest');
+    const container = render({ node, drawerExpanded: true, callOrder: 'newest' });
     expect(rowIds(container)).toStrictEqual(['c3', 'c2', 'c1']);
 
     // THE SEQUENCE NUMBER IS THE RUN, NOT THE SCREEN. Reversing the list must
@@ -874,8 +894,7 @@ describe('A9.5 — call order, and following the newest call', () => {
     // down grows out of view ABOVE them. So it follows, to the top.
     // `webview/drawer.ts:followTarget` is the rule and `drawer.test.ts` pins
     // it at `0` for this order.
-    const container = render({ node, drawerExpanded: true });
-    setOrder(container, 'newest');
+    const container = render({ node, drawerExpanded: true, callOrder: 'newest' });
     const list = one(container, 'inspector').querySelector('.calls');
     expect(list?.getAttribute('data-following')).toBe('true');
     expect(list?.getAttribute('data-order')).toBe('newest');
@@ -1161,13 +1180,9 @@ describe('the call list’s time column and inter-call gap (DoD 7.3)', () => {
   it('keeps every figure when the list is FILTERED down to one row', () => {
     const container = render({ node: runOf('all stated'), drawerExpanded: true });
     const before = columns(container);
-    const failed = all(container, TESTID.drawerFilterChip).find(
-      (chip) => chip.dataset['filter'] === 'error',
+    const after = columns(
+      render({ node: runOf('all stated'), drawerExpanded: true, statusFilter: 'error' }),
     );
-    if (failed === undefined) throw new Error('no Failed chip');
-    click(failed);
-
-    const after = columns(container);
     expect(after).toHaveLength(1);
     // `b` is the second call of the run. Over the FILTERED list it would be
     // the first, and a first row has no predecessor and no gap — so an em
@@ -1179,13 +1194,9 @@ describe('the call list’s time column and inter-call gap (DoD 7.3)', () => {
   it('keeps every figure when the list is REVERSED', () => {
     const container = render({ node: runOf('all stated'), drawerExpanded: true });
     const before = columns(container);
-    const select = one(container, TESTID.drawerOrderSelect) as HTMLSelectElement;
-    harness.flushSync(() => {
-      select.value = 'newest';
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-
-    const after = columns(container);
+    const after = columns(
+      render({ node: runOf('all stated'), drawerExpanded: true, callOrder: 'newest' }),
+    );
     expect(after.map((r) => r.id)).toEqual([...before.map((r) => r.id)].reverse());
     expect([...after].reverse()).toEqual(before);
   });
@@ -1211,5 +1222,158 @@ describe('the call list’s time column and inter-call gap (DoD 7.3)', () => {
     expect(one(container, 'drawer-detail-start').textContent).toBe(c.rendered[1]?.at);
     expect(one(container, 'drawer-detail-end').textContent).toBe(EM_DASH);
     expect(c.rendered[1]?.end).toBe(EM_DASH);
+  });
+});
+
+/* ------------------------------------------------------------------------ *
+ * v0.9.0 DoD 9.14, ruling 5 — THROUGH THE MOUNTED APP
+ * ------------------------------------------------------------------------ */
+
+describe('View -> Inspector reaches the drawer the way production does', () => {
+  /*
+   * THIS EXISTS BECAUSE THE WIRING WAS MISSING AND EVERY TEST ABOVE WAS GREEN.
+   *
+   * Ruling 5 moved the drawer's status, order and tool filters to
+   * View -> Inspector. The commands were contributed and registered, the host
+   * held the values, the panel was sent them, the store stored them, and the
+   * sidebar ticked the active one - and `App.svelte` did not pass them to
+   * `<Inspector>`, so all seven commands were dead. A verifier round found it.
+   *
+   * It is the recorded D4 shape and the fifth time this repository has
+   * shipped it: the tests above mount the component and supply the props BY
+   * HAND, which proves the component honours values the product never sent.
+   * The rule this file now carries is the one the repository already wrote
+   * down - for any prop that changes user-visible output, one test must
+   * reach it the way production does.
+   */
+  interface Panel {
+    container: HTMLElement;
+    store: Store;
+    dispose: () => void;
+  }
+
+  const panels: Panel[] = [];
+
+  function panel(): Panel {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const started = appHarness.start(container, { postMessage: () => {} });
+    const record: Panel = {
+      container,
+      store: started.store,
+      dispose: () => {
+        started.dispose();
+        container.remove();
+      },
+    };
+    panels.push(record);
+    return record;
+  }
+
+  /**
+   * A session whose root agent made three calls, ONE PER STATUS and two tool
+   * names, with the drawer EXPANDED.
+   *
+   * Expanded because of section 8.6: a collapsed drawer always shows the
+   * unfiltered list, deliberately. A test that opened it at its default
+   * height would assert that the filters do nothing and would have passed
+   * against the missing wiring this block exists for.
+   */
+  function opened(): Panel {
+    const p = panel();
+    const state = liveSession();
+    const root = state.root as AgentNode;
+    const calls: ToolNode[] = [
+      tool({ id: 'c-run', toolName: 'Read', status: 'running' }),
+      tool({ id: 'c-done', toolName: 'Read', status: 'done' }),
+      tool({ id: 'c-err', toolName: 'Bash', status: 'error' }),
+    ];
+    appHarness.flushSync(() => {
+      p.store.handleMessage({
+        type: 'snapshot',
+        sessions: [{ ...state, root: { ...root, children: calls } }],
+      });
+    });
+    appHarness.flushSync(() => {
+      p.store.enterSession('session-live');
+      p.store.selectNode('root');
+    });
+    appHarness.flushSync(() => {
+      p.store.toggleDrawerExpanded();
+    });
+    return p;
+  }
+
+  const rows = (p: Panel): string[] =>
+    all(p.container, TESTID.actionRow).map((r) => r.dataset['actionId'] ?? '');
+
+  const statuses = (p: Panel): string[] =>
+    all(p.container, TESTID.actionRow).map((r) => r.dataset['status'] ?? '');
+
+  afterEach(() => {
+    while (panels.length > 0) panels.pop()?.dispose();
+  });
+
+  it('the STATUS filter narrows the real drawer, on every value', () => {
+    const p = opened();
+    const everything = rows(p);
+    expect(everything).toStrictEqual(['c-run', 'c-done', 'c-err']);
+    // The control: three DIFFERENT statuses, or every arm below would be
+    // satisfied by a filter that did nothing.
+    expect(new Set(statuses(p)).size).toBe(3);
+
+    for (const status of ['running', 'done', 'error'] as const) {
+      appHarness.flushSync(() => {
+        p.store.handleMessage(viewControls({ inspectorStatus: status }));
+      });
+      const shown = statuses(p);
+      expect(shown.length, status).toBeGreaterThan(0);
+      expect(new Set(shown), status).toStrictEqual(new Set([status]));
+    }
+
+    appHarness.flushSync(() => {
+      p.store.handleMessage(viewControls({ inspectorStatus: 'all' }));
+    });
+    expect(rows(p)).toStrictEqual(everything);
+  });
+
+  it('the ORDER reverses the real drawer, and back', () => {
+    const p = opened();
+    const oldest = rows(p);
+    expect(oldest.length).toBeGreaterThan(1);
+
+    appHarness.flushSync(() => {
+      p.store.handleMessage(viewControls({ inspectorOrder: 'newest' }));
+    });
+    expect(rows(p)).toStrictEqual([...oldest].reverse());
+
+    appHarness.flushSync(() => {
+      p.store.handleMessage(viewControls({ inspectorOrder: 'oldest' }));
+    });
+    expect(rows(p)).toStrictEqual(oldest);
+  });
+
+  it('the TOOL filter narrows the real drawer to one tool', () => {
+    const p = opened();
+    const before = rows(p);
+    expect(before).toStrictEqual(['c-run', 'c-done', 'c-err']);
+
+    // ONE tool name, then a name no call used. Both arms, because a filter
+    // that ignored its input would keep the list full for any value, and one
+    // that emptied it for every value would pass the second arm alone.
+    appHarness.flushSync(() => {
+      p.store.handleMessage(viewControls({ inspectorTool: 'Bash' }));
+    });
+    expect(rows(p)).toStrictEqual(['c-err']);
+
+    appHarness.flushSync(() => {
+      p.store.handleMessage(viewControls({ inspectorTool: 'NoSuchTool' }));
+    });
+    expect(rows(p)).toStrictEqual([]);
+
+    appHarness.flushSync(() => {
+      p.store.handleMessage(viewControls({ inspectorTool: 'all' }));
+    });
+    expect(rows(p)).toStrictEqual(before);
   });
 });

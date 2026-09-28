@@ -163,7 +163,12 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (tempRoot !== undefined) await rm(tempRoot, { recursive: true, force: true });
-});
+  // A BUDGET, because this hook is filesystem work and vitest's default is
+  // 10 s: the capture writes two full copies of the DOM evidence and a
+  // recursive remove of them under full-suite load has been measured past
+  // that. A hook that times out reports as SKIPS with a clean-looking tests
+  // line, which is the class this repository records most.
+}, 120_000);
 
 // ---------------------------------------------------------------------------
 // Determinism — the point of this file

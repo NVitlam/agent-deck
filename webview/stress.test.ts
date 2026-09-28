@@ -1312,16 +1312,20 @@ describe('the canvas renders the stress corpus', () => {
         });
         const canvas = container.querySelector(`[data-testid="${TESTID.canvas}"]`);
         expect(canvas, id).not.toBeNull();
-        const status = container.querySelector('[data-testid="tree-status"]');
-        expect(status, id).not.toBeNull();
-        const statusText = status?.textContent ?? '';
+        // v0.9.0 DoD 9.14: the status LINE is gone — spec
+        // `Amendment 2026-09-20` allows no counts on a surface — and the
+        // numbers it carried are attributes, which render nothing.
+        expect(container.querySelector('[data-testid="tree-status"]'), id).toBeNull();
         const drawnCells = container.querySelectorAll(
           `[data-testid="${TESTID.cell}"],[data-testid="${TESTID.nucleus}"]`,
         ).length;
         observed.push(
           `${id}: autoCollapsed=${String(canvas?.getAttribute('data-auto-collapsed'))} ` +
             `depth=${String(canvas?.getAttribute('data-collapse-depth'))} ` +
-            `drawn=${String(drawnCells)} status=${JSON.stringify(statusText)}`,
+            `drawn=${String(drawnCells)} ` +
+            `attrs=${String(canvas?.getAttribute('data-drawn'))}/` +
+            `${String(canvas?.getAttribute('data-total'))}/` +
+            `${String(canvas?.getAttribute('data-hidden'))}`,
         );
 
         const above = target > AUTO_COLLAPSE_NODES;
@@ -1329,24 +1333,20 @@ describe('the canvas renders the stress corpus', () => {
         expect(canvas?.getAttribute('data-collapse-depth'), id).toBe(
           above ? String(COLLAPSE_DEPTH) : 'Infinity',
         );
-        // The status line's own numbers, BY VALUE. `of <target> nodes` is the
-        // total in both arms; what changes is the count before it and whether
-        // the sentence admits the collapse.
-        expect(statusText, id).toContain(`of ${String(target)} nodes`);
+        // The same numbers, BY VALUE, off the attributes. `data-total` is the
+        // total in both arms; what changes is `data-drawn` and whether the
+        // auto-collapse fired at all.
+        expect(canvas?.getAttribute('data-total'), id).toBe(String(target));
+        expect(canvas?.getAttribute('data-drawn'), id).toBe(String(drawnCells));
         if (above) {
-          expect(statusText, id).toContain(
-            `collapsed to depth ${String(COLLAPSE_DEPTH)} automatically above ` +
-              `${String(AUTO_COLLAPSE_NODES)} nodes`,
-          );
           expect(drawnCells, id).toBeLessThan(target);
-          expect(statusText, id).toContain(`${String(drawnCells)} of`);
+          expect(Number(canvas?.getAttribute('data-hidden')), id).toBeGreaterThan(0);
         } else {
-          expect(statusText, id).not.toContain('automatically');
           expect(drawnCells, id).toBe(target);
-          expect(statusText, id).toBe(`${String(target)} of ${String(target)} nodes`);
+          expect(canvas?.getAttribute('data-hidden'), id).toBe('0');
         }
       }
-      console.log('[stress] status line at the boundary:');
+      console.log('[stress] the collapse attributes at the boundary:');
       for (const line of observed) console.log(`[stress]   ${line}`);
 
       started.dispose();

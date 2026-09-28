@@ -595,8 +595,35 @@ function capture(window, harness, drive) {
   // DOM-text capture — but it is a different artifact, and the human's
   // real-window pass (Phase 4 DoD 4) still has only the list column to compare
   // against.
+  // v0.9.0 DoD 9.14: the view mode is the HOST's and arrives on
+  // `viewControls`. The capture sends what the host sends, so the evidence
+  // is of the path production takes rather than of a setter that no longer
+  // exists.
+  //
+  // DoD 9.17 SPLIT `viewMode` INTO `renderer` AND `surface`, AND THIS FILE
+  // IS NOT TYPECHECKED. It is `.mjs`, so it kept sending `viewMode: 'list'`
+  // against a contract that no longer has the field; the store derived
+  // `undefined`, the rail rendered nothing, and the only thing that caught
+  // it was this script's own "the refused session never reached the rail"
+  // assertion at runtime. That assertion is why the failure was legible at
+  // all — the recorded lesson about a scripted copy of a typed contract,
+  // paid once more.
   harness.flushSync(() => {
-    started.store.setViewMode('list');
+    started.store.handleMessage({
+      type: 'viewControls',
+      controls: {
+        renderer: 'list',
+        surface: 'sessions',
+        livenessFilter: 'all',
+        engineFilter: 'all',
+        deckLayout: 'grid',
+        deckSort: 'live',
+        statsTab: 'files',
+        inspectorStatus: 'all',
+        inspectorOrder: 'oldest',
+        inspectorTool: 'all',
+      },
+    });
   });
 
   const dispatch = (message) => {

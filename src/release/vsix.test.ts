@@ -528,7 +528,18 @@ const IDENTITY_ALLOWED_IN_ARTIFACT: readonly RegExp[] = [
   // same rename it does to LICENSE -> LICENSE.txt. Only the unzipped artifact
   // knows this; the on-disk file and `vsce ls` both look clean.
   /^extension\/readme\.md$/i,
+  /*
+   * v0.9.0 DoD 9.7. The HOST BUNDLE carries it now, and that is the point
+   * rather than a leak: the About entry names the author in a paragraph the
+   * spec amendment quotes verbatim, so the string is compiled in.
+   *
+   * Enumerated rather than loosening the check. `src/about.test.ts` pins
+   * WHICH words, by comparing the paragraph to the spec character for
+   * character, so this entry cannot quietly cover a second name.
+   */
+  /^extension\/dist\/extension\.cjs$/,
 ];
+
 
 /**
  * ...and the paths where its ABSENCE would be its own defect, so the allow-set
@@ -548,7 +559,17 @@ const IDENTITY_REQUIRED_IN_ARTIFACT: ReadonlyArray<{ readonly re: RegExp; readon
 // listing existed the file was clean, which is why it was not enumerated here
 // and why the always-on leg went red the moment the badge landed - working as
 // intended.
-const IDENTITY_ALLOWED_ON_DISK: readonly string[] = ['LICENSE', 'package.json'];
+// `dist/extension.cjs` joined it at 0.9.0, and for the same kind of reason:
+// DoD 9.7’s About paragraph NAMES THE AUTHOR, the spec amendment quotes it
+// verbatim, and so the host bundle compiles the string in. Enumerated rather
+// than the check being loosened; `src/about.test.ts` pins which words by
+// comparing the paragraph to the spec character for character.
+const IDENTITY_ALLOWED_ON_DISK: readonly string[] = [
+  'LICENSE',
+  'package.json',
+  'dist/extension.cjs',
+];
+
 
 /**
  * `vsce ls` is a subprocess spawn, measured at 1.4-3.2 s per call. Six tests

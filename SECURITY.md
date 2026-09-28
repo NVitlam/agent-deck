@@ -62,14 +62,49 @@ are the stats history's own caps — and none may carry a control or format char
 and Cf; free text may carry a tab and LF or CRLF line breaks), so no zero-width character and no
 bidirectional override, nor a line or paragraph separator, nor a lone surrogate. A string that fails is **dropped and counted, never shortened**. A piece of evidence
 may be text only on a stats-record field the history itself stores as text, under that field's
-cap. The panel renders all of it as text, never as markup. Agent Deck calls the provider's
-`listRuns`, `getRun` for the report you select or export (a set naming any other run is dropped),
-the optional `getRawOutput` only when you press **Show raw output** on a refused run, the optional
-`pickAgent`, `showPayload` and `clearHistory` only when you press that sidebar row, and subscribes
-once through `onDidChange`; it calls nothing else — `getLatest` (required) and `run` (optional) are
-members it does not call — asks no licence question and opens no connection for it. Raw output opens as an untitled plain-text
-document — nothing is written to disk — and more than 1,048,576 characters is not opened at all.
-Proof: `src/insights-provider.test.ts`.
+cap. The panel renders all of it as text, never as markup. Raw output opens as an untitled
+plain-text document — nothing is written to disk — and more than 1,048,576 characters is not
+opened at all. Every call Agent Deck makes into a provider is a row of the table below; it asks no
+licence question and opens no connection for any of them.
+
+**Every call Agent Deck makes outside its own code, as of 0.9.0.** This is the whole list. A call
+the extension makes that is not on it is a defect in this document.
+
+| call | to | when |
+| --- | --- | --- |
+| `http.request` | another Agent Deck window's listener, at the loopback literal `127.0.0.1` and `agentDeck.port` | a second window following the first (from 0.7.0). The only network client in the build — §4 |
+| `vscode.env.openExternal` | the editor, which opens your browser | an About tile (four links) or the Get tile (the Insights page), and only after you press Open on the confirmation that names the host |
+| provider `onDidChange(listener)` | the registered Insights provider | once, at registration; the disposable it returns is disposed when the provider leaves |
+| provider `listRuns()` | the registered Insights provider | each time the host builds the Insights surface's state, and to check a run is still listed before acting on it |
+| provider `getRun(runId)` | the registered Insights provider | for the run you select (the preview), each run you export, and the selected run before raw output is asked for. A set naming any other run is dropped |
+| provider `getRawOutput(runId)`, optional | the registered Insights provider | only when you press **Show raw output** on a selected refused run |
+| provider `pickAgent()`, `showPayload()`, `clearHistory()`, optional | the registered Insights provider | one call when you press that row under Open Insights, and only while the provider has that action |
+| provider `investigate(runId)`, optional (from 0.9.0 round 8) | the registered Insights provider | one call when you press **Investigate Report** on a selected run that has a report. It is passed the selected run's id and nothing else; the parent builds no prompt and starts nothing |
+| `vscode.commands.executeCommand` | the editor's `workbench.action.openSettings` with `@ext:nvitlam.agent-deck` | **Open Settings** |
+| `vscode.commands.executeCommand` | the editor's `workbench.action.evenEditorWidths` | the deck panel opening while the window has more than one editor group |
+| `vscode.commands.executeCommand` | the editor's `setContext`, for the three Insights action keys | on every change to the registered provider, so the editor's menus offer only the actions it has |
+| `vscode.commands.executeCommand` | Agent Deck's own `agentDeck.*` commands | a sidebar row or a Statistics tab, after the id is checked against the one command table; any other id is dropped |
+| `WorkspaceConfiguration.update` | VS Code's user settings | a Tweaks command, for one of Agent Deck's own three settings — §2 |
+| `window.showSaveDialog`, `window.showOpenDialog`, then `workspace.fs.writeFile` | a file you choose | exporting an Insights report — §2 |
+| `env.clipboard.writeText` | the clipboard | **Copy**, for one report or for the ticked reports |
+| `workspace.openTextDocument` | an untitled document | **Show raw output** |
+
+The stats history (above) is written under the extension's own global storage and is not a call
+outside it. Two provider members are never called: `getLatest` (required) and `run` (optional).
+Proof: `src/hooks/egress.test.ts` › "contains a server and exactly one client, whose destination is the loopback literal";
+`src/extension.test.ts` › "a tile ASKS FIRST: the confirmation, then openExternal — DoD 9.23";
+`src/insights-provider.test.ts` › "the provider’s onDidChange reaches the registry’s onChange";
+`src/insights-provider.test.ts` › "DoD 9.44: the selection previews ONLY a run the list holds, read through getRun";
+`src/insights-provider.test.ts` › "DoD 9.44: a getRun answer naming ANOTHER run is dropped, never shown under the row clicked";
+`src/extension.test.ts` › "9.40: the snapshot OFFERS raw output on a placed refused set, and the press opens it untitled and shown";
+`src/insights-provider.test.ts` › "DoD 9.44: invoke() calls the action ONCE, awaits it, and answers what it came to";
+`src/extension.test.ts` › "9.55: the press calls the provider’s investigate with the SELECTED run id and nothing else";
+`src/insights-provider.test.ts` › "a Proxy provider sees no other property touched, and getRawOutput called only when asked";
+`src/extension.test.ts` › "agentDeck.openSettings runs the workbench settings command, filtered to this extension";
+`src/extension.test.ts` › "DoD 4.6c: the deck opens in ViewColumn.One; even-widths runs once with two groups and not with one";
+`src/extension.test.ts` › "9.45: each action is a row under Open Insights ONLY while the provider has it, and the context keys agree";
+`src/bridge/messages.test.ts` › "`runCommand` accepts every id in the table and NOTHING else";
+`src/extension.test.ts` › "9.47: Copy puts the plain text on the clipboard and opens no dialog".
 
 ---
 
@@ -77,22 +112,32 @@ Proof: `src/insights-provider.test.ts`.
 
 These are build-time law in this repository, not guidelines. A change that breaks one fails review.
 
-- **G1 — read-only, always.** *Amended 2026-09-23:* Agent Deck writes only its stats history under
-  globalStorage and export files to a location the user chooses in a save dialog; never under any
-  engine's data directory or settings. No writes to Claude Code settings, session files, or anything under
+- **G1 — read-only, always.** *Amended 2026-09-28:* Agent Deck writes only three things: its stats
+  history under globalStorage; export files to a location the user chooses (one report through a
+  save dialog, or one file per ticked report into a folder chosen through a folder dialog); and
+  its own three settings (`agentDeck.followNewSessions`, `agentDeck.openDrawerOnEnter`,
+  `agentDeck.drawerExpandedByDefault`), through VS Code's configuration API to the user settings.
+  Never under any engine's data directory or settings. (This replaces the wording of 2026-09-23,
+  which named the save dialog alone and did not name the settings.) No writes to Claude Code settings, session files, or anything under
   `~/.claude`, ever. Hook installation is a snippet the user pastes themselves; the extension never
   edits a settings file to install it. In this repository the hook block lives in the repo-local
   `.claude/settings.local.json` precisely so that `~/.claude` stays untouched.
 
-  **One write the extension does make, stated because G1 is about engines and this is not one.**
-  The sidebar's Tweaks tab (0.8.0) changes four of Agent Deck's own settings —
-  `agentDeck.followNewSessions`, `agentDeck.openDrawerOnEnter`,
-  `agentDeck.drawerExpandedByDefault`, `agentDeck.defaultOrdering` — through VS Code's
-  `WorkspaceConfiguration.update`, to the user settings (`ConfigurationTarget.Global`), never to a
-  workspace's `.vscode/settings.json`. Nothing under any engine's directory is written. A message
-  naming any other key, or a value the setting cannot take, is refused before the call.
-  Proof: `src/extension.test.ts` › "an updateTweak writes through workspace.getConfiguration().update, to Global";
-  `src/sidebar/provider.test.ts` › "drops a runCommand naming anything off the menu, and every other message type".
+  **Agent Deck's own settings: the Tweaks.** From 0.9.0 the sidebar's Tweaks page shows three
+  rows, one per boolean setting — `agentDeck.followNewSessions`, `agentDeck.openDrawerOnEnter` and
+  `agentDeck.drawerExpandedByDefault`. Each row runs one command, `agentDeck.tweak.<setting>`, and
+  that command writes exactly one thing: the setting's opposite value, through VS Code's
+  `WorkspaceConfiguration.update`, to the user settings (`ConfigurationTarget.Global`). It never
+  writes a workspace's `.vscode/settings.json`, which is usually tracked in your repository. The
+  key is derived from the command's id, so a command that is not a tweak names no key and writes
+  nothing. No webview message carries a key or a value: the sidebar can only ask for a command,
+  and a command id that is not in the one command table is dropped before anything runs.
+  `agentDeck.defaultOrdering` is not a Tweak; it is a setting you edit in VS Code's settings
+  yourself, and Agent Deck only reads it. Nothing under any engine's directory is written.
+  Proof: `src/extension.test.ts` › "a tweak command writes through workspace.getConfiguration().update, to Global";
+  `src/view/controls.test.ts` › "every tweak command names a declared setting";
+  `src/view/controls.test.ts` › "answers NOTHING for a command that is not a tweak";
+  `src/bridge/messages.test.ts` › "`runCommand` accepts every id in the table and NOTHING else".
 
   **A second write, from 0.9.0: an Insights report you export.** HTML and Markdown are saved where
   you choose, through the editor's own save dialog (one file) or folder dialog (one file per ticked
@@ -108,8 +153,8 @@ These are build-time law in this repository, not guidelines. A change that break
   API. Exporting makes no network call.
   Proof: `src/insights-save.test.ts` (the one writer and its one importer, the refused roots);
   `src/insights-export.test.ts` (every HTML golden parsed for anything that loads; the Markdown
-  escaping; no network import); `src/extension.test.ts` › "9.47 G1: a path inside an observed
-  engine’s directory is refused and NOTHING is written".
+  escaping; no network import);
+  `src/extension.test.ts` › "9.47 G1: a path inside an observed engine’s directory is refused and NOTHING is written".
   `src/hooks/listener.ts` imports no filesystem API at all, and a test asserts that against the
   source text — including that it never resolves a home directory.
 
@@ -550,5 +595,6 @@ Not implemented, and not accepted as contributions: writes to anything an observ
 replay of a session, or persistence of its content · wrapping or launching any observed engine ·
 sending telemetry, or any egress. The stats history in §1 is the one write Agent Deck makes on its own,
 and it holds derived numbers only, in the extension's own storage; an Insights export (§2, G1) is written
-only where you choose, and never into a directory an observed engine owns. Zero writes to what is observed is the trust anchor, and the
+only where you choose, and never into a directory an observed engine owns; a Tweak (§2, G1) writes
+the one Agent Deck setting you toggled, to your user settings. Zero writes to what is observed is the trust anchor, and the
 point of writing it down is that it is easier to defend a boundary than to relocate one.

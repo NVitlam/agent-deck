@@ -2,7 +2,7 @@
 
 All notable changes to Agent Deck are documented here.
 
-## 0.9.0 - 2026-09-20 - Clean windows, Insights, About
+## 0.9.0 - 2026-09-28 - Clean windows, Insights, About
 
 ### Changed
 
@@ -54,6 +54,20 @@ All notable changes to Agent Deck are documented here.
   `agentDeck.defaultOrdering` used to re-sort a deck that was already on
   screen; it seeds the sort once, when the extension starts, and View - Sort
   is what changes it afterwards.
+- **The drawer header wraps instead of running off the edge.** At narrow panel
+  widths the header’s fields used to be cut at the right-hand edge, and the
+  last of them was not drawn at all. They now break onto a second row, and at
+  1200px every field is drawn. A panel narrower than a single field can still
+  cut that field.
+- **Statistics records are version 3.** Records written by 0.7.x and 0.8.x are
+  still read, exactly as they were written - nothing on disk is rewritten - and
+  each one names the facts its version could not carry.
+- **Long names and paths are left out rather than shortened.** A file path over
+  1024 characters, or an agent type or skill name over 64, is omitted instead of
+  being cut short - a shortened path is still a path - and the record says what
+  was left out. For an agent type the field alone goes; for a file, a churn
+  chain or a skill the whole row goes, so that row's counts go with it. The
+  session keeps every other number it has, and is not excluded.
 
 ### Added
 
@@ -147,23 +161,6 @@ All notable changes to Agent Deck are documented here.
   opens with that session’s Tokens card highlighted. Given none, it behaves
   exactly as before. An id this window does not hold highlights nothing and is
   not an error.
-
-### Changed
-
-- **The drawer header wraps instead of running off the edge.** At narrow panel
-  widths the header’s fields used to be cut at the right-hand edge, and the
-  last of them was not drawn at all. They now break onto a second row, and at
-  1200px every field is drawn. A panel narrower than a single field can still
-  cut that field.
-- **Statistics records are version 3.** Records written by 0.7.x and 0.8.x are
-  still read, exactly as they were written - nothing on disk is rewritten - and
-  each one names the facts its version could not carry.
-- **Long names and paths are left out rather than shortened.** A file path over
-  1024 characters, or an agent type or skill name over 64, is omitted instead of
-  being cut short - a shortened path is still a path - and the record says what
-  was left out. For an agent type the field alone goes; for a file, a churn
-  chain or a skill the whole row goes, so that row's counts go with it. The
-  session keeps every other number it has, and is not excluded.
 
 ## 0.8.1 - 2026-09-15 - A first Claude Code session in a new folder
 

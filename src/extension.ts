@@ -2404,6 +2404,12 @@ export interface DataPathDiagnostics {
    * refused — and each one arms a re-check.
    */
   graftPending: number;
+  /**
+   * Sessions whose LAST graft came back pending and that are awaiting a
+   * re-check, right now. A level, not a count: it falls when a session
+   * resolves, is forgotten, throws, or the path is disposed.
+   */
+  pendingSessions: number;
   /** `graftSession` threw outright. Should stay 0; counted so it cannot crash. */
   graftErrors: number;
   lastGraftError?: string;
@@ -2608,6 +2614,12 @@ export class AgentDeckDataPath {
   #graftPending = 0;
   /** Sessions whose last graft came back pending, awaiting a re-check. */
   readonly #pendingSessions = new Set<string>();
+  /**
+   * Per pending session, when each of its incomplete pairs was FIRST seen
+   * pending, handed back to every re-graft so `PAIR_PENDING_CAP_MS` counts
+   * from the first sighting (ruling of 2026-09-29, the second).
+   */
+  readonly #pendingSince = new Map<string, ReadonlyMap<string, number>>();
   #pendingTimer: TimerHandle | null = null;
   /** Latest per-session parse levels. Keyed by session id. */
   readonly #parseLevels = new Map<string, { malformed: number; ignored: number }>();
@@ -2792,6 +2804,7 @@ export class AgentDeckDataPath {
       grafts: this.#grafts,
       graftRefusals: this.#graftRefusals,
       graftPending: this.#graftPending,
+      pendingSessions: this.#pendingSessions.size,
       graftErrors: this.#graftErrors,
       consumerErrors: this.#consumerErrors,
       timersArmed:
@@ -3145,6 +3158,7 @@ export class AgentDeckDataPath {
       this.#pendingTimer = null;
     }
     this.#pendingSessions.clear();
+    this.#pendingSince.clear();
     // First, and unconditionally: the OpenCode poll trigger and WAL watch, and
     // the Codex poll triggers, must not outlive the host even if a Claude Code
     // teardown below rejects.
@@ -3331,6 +3345,7 @@ export class AgentDeckDataPath {
         this.model.forgetSession(sessionId);
         this.#dirty.delete(sessionId);
         this.#pendingSessions.delete(sessionId);
+        this.#pendingSince.delete(sessionId);
         // The level goes with the session. Leaving it behind would keep
         // counting malformed lines in a transcript nobody is watching.
         this.#parseLevels.delete(sessionId);
@@ -3394,6 +3409,9 @@ export class AgentDeckDataPath {
         // "long" proves nothing about which number produced it. Verified red
         // by deleting this line: 4 of 42 tests in that file fail.
         previewBytes: this.settings.previewBytes,
+        ...(this.#pendingSince.has(sessionId)
+          ? { pendingSince: this.#pendingSince.get(sessionId) }
+          : {}),
       });
       if (this.#disposed) return;
       if (!result.ok && result.pending !== undefined) {
@@ -3405,9 +3423,11 @@ export class AgentDeckDataPath {
         // this session dirty again.
         this.#graftPending += 1;
         this.#pendingSessions.add(sessionId);
+        this.#pendingSince.set(sessionId, new Map(Object.entries(result.pending.firstSeenMs)));
         this.#armPendingRecheck(result.pending.deadlineMs);
       } else {
         this.#pendingSessions.delete(sessionId);
+        this.#pendingSince.delete(sessionId);
       }
       if (!result.ok && result.pending === undefined) {
         this.#graftRefusals += 1;
@@ -3462,6 +3482,9 @@ export class AgentDeckDataPath {
       // is the model's own vocabulary for it.
       this.#graftErrors += 1;
       this.#lastGraftError = error instanceof Error ? error.message : String(error);
+      // A throw refuses the session below; it is not pending any more.
+      this.#pendingSessions.delete(sessionId);
+      this.#pendingSince.delete(sessionId);
       if (this.#disposed) return;
       this.model.refuseSession(sessionId, slug, {
         kind: 'schemaMismatch',

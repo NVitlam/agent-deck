@@ -104,6 +104,11 @@ lab/
 # covered by this rule: whether it is tracked is a deliberate open decision.
 .opencode/
 
+# Screen-recording output: the small projects a demo run builds at the repo
+# root. Not product (ruling of 2026-09-29). ANCHORED, like the private block
+# above. .vscodeignore denies it too - git's door stops nothing from packaging.
+/demo/
+
 # --- The maintainer's private half (ported from release/0.5.0, 2026-08-28) ---
 #
 # `lab/` is the private repository holding the working method, the evidence, the

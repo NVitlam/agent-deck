@@ -343,11 +343,19 @@ export interface PairPending {
   /** The incomplete pairs, sorted. Every one is inside the window. */
   agentIds: string[];
   /**
-   * Epoch ms: the latest `mtime + PAIR_PENDING_WINDOW_MS` across those pairs.
-   * A re-check at or after this instant that still finds a pair incomplete
-   * refuses with the existing code.
+   * Epoch ms: across those pairs, the latest of each pair's own deadline —
+   * `mtime + PAIR_PENDING_WINDOW_MS` or `firstSeen + PAIR_PENDING_CAP_MS`,
+   * whichever is sooner. A re-check at or after a pair's deadline that still
+   * finds it incomplete refuses with the existing code.
    */
   deadlineMs: number;
+  /**
+   * Per pair, the instant it was first seen pending: the value the caller
+   * passed in {@link FingerprintOptions.pendingSince}, or this call's clock
+   * when it passed none. The caller hands it back on the next fingerprint so
+   * the cap counts from the FIRST sighting, not from the latest.
+   */
+  firstSeenMs: Readonly<Record<string, number>>;
 }
 
 /**
@@ -366,6 +374,17 @@ export interface PairPending {
  * same reasoning.
  */
 export const PAIR_PENDING_WINDOW_MS = 2_000;
+
+/**
+ * The most an incomplete pair may stay pending, counted from the moment it was
+ * FIRST seen pending, however much the existing file grows (ruling of
+ * 2026-09-29, the second). Without it, a transcript still being appended to
+ * keeps moving its mtime and so its window, and a pair whose sidecar never
+ * comes — the directory-convention tripwire — would stay pending, with the
+ * session re-grafted every re-check, for as long as the subagent ran. After
+ * the cap it is refused with the existing codes.
+ */
+export const PAIR_PENDING_CAP_MS = 30_000;
 
 /** Compile-time proof that {@link FingerprintResult} satisfies the model type. */
 export type FingerprintResultIsParseResult =
@@ -405,6 +424,13 @@ export interface FingerprintOptions {
    * {@link PAIR_PENDING_WINDOW_MS} without sleeping.
    */
   now?: () => number;
+  /**
+   * Per subagent id, the instant that pair was first seen pending, as a
+   * previous fingerprint of this session reported it in
+   * {@link PairPending.firstSeenMs}. Absent for a pair means "first seen now".
+   * The data path keeps it between grafts; nothing else needs to.
+   */
+  pendingSince?: ReadonlyMap<string, number>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1126,10 +1152,15 @@ export async function fingerprintSession(
   // once, so a real refusal on a complete pair still wins over a "look again".
   const now = options.now ?? Date.now;
   const pendingIds: string[] = [];
+  const firstSeenMs: Record<string, number> = {};
   let pendingDeadline = 0;
   let pendingMismatch: FingerprintMismatch | undefined;
-  const pairAge = async (present: string): Promise<{ young: boolean; deadline: number }> => {
+  const pairAge = async (
+    present: string,
+    agentId: string,
+  ): Promise<{ young: boolean; deadline: number; firstSeen: number }> => {
     const at = now();
+    const firstSeen = options.pendingSince?.get(agentId) ?? at;
     let mtimeMs: number;
     try {
       mtimeMs = (await stat(join(subagentsDir, present))).mtimeMs;
@@ -1138,8 +1169,8 @@ export async function fingerprintSession(
       // the directory as it then is. Measured from now, so it is young.
       mtimeMs = at;
     }
-    const deadline = mtimeMs + PAIR_PENDING_WINDOW_MS;
-    return { young: at < deadline, deadline };
+    const deadline = Math.min(mtimeMs + PAIR_PENDING_WINDOW_MS, firstSeen + PAIR_PENDING_CAP_MS);
+    return { young: at < deadline, deadline, firstSeen };
   };
 
   const agentIds = [...new Set([...transcripts.keys(), ...metas.keys()])].sort();
@@ -1165,9 +1196,10 @@ export async function fingerprintSession(
                 actual: 'absent',
               },
             );
-      const age = await pairAge(transcriptName ?? metaName ?? '');
+      const age = await pairAge(transcriptName ?? metaName ?? '', agentId);
       if (!age.young) return refuse(refusal);
       pendingIds.push(agentId);
+      firstSeenMs[agentId] = age.firstSeen;
       pendingDeadline = Math.max(pendingDeadline, age.deadline);
       pendingMismatch ??= refusal;
       continue;
@@ -1208,7 +1240,7 @@ export async function fingerprintSession(
     return {
       ok: false,
       mismatch: pendingMismatch,
-      pending: { agentIds: pendingIds, deadlineMs: pendingDeadline },
+      pending: { agentIds: pendingIds, deadlineMs: pendingDeadline, firstSeenMs },
       diagnostics,
     };
   }

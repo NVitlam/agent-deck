@@ -102,6 +102,7 @@ import {
   INSIGHTS_PAGE_URL,
   OPEN_INSIGHTS_COMMAND,
   SHOW_DIAGNOSTICS,
+  PAIR_RECHECK_MS,
   EVEN_EDITOR_WIDTHS,
   SETTINGS_FILTER,
   StatsPipeline,
@@ -146,7 +147,8 @@ import { DEFAULT_OC_POLL_INTERVAL_MS } from './opencode/liveness.js';
 import type { PollTrigger, PollTriggerHandle } from './opencode/liveness.js';
 import { webviewHtml } from './bridge/html.js';
 import { DEFAULT_PREVIEW_BYTES as GRAFTER_DEFAULT_PREVIEW_BYTES } from './model/graft.js';
-import type { GraftSessionResult } from './model/graft.js';
+import type { GraftSessionOptions, GraftSessionResult } from './model/graft.js';
+import { PAIR_PENDING_WINDOW_MS } from './parser/fingerprint.js';
 import type { DiagnosticsEvent } from './bridge/diagnostics.js';
 import { TRUNCATION_MARKER_RE, truncationMarker } from './parser/redact.js';
 import { WEBVIEW_ROOT_ID } from './bridge/contract.js';
@@ -10673,5 +10675,122 @@ describe('a subagent pair caught half written is pending, never refused (0.9.2)'
     );
     const last = emissions.at(-1);
     expect(last === undefined ? undefined : sessionIn(last)?.schemaOk).toBe(false);
+  }, 30_000);
+});
+
+/*
+ * 0.9.2 follow-up, the ruling of 2026-09-29 (the second): the pending re-check
+ * TIMER, on a manual clock. The verifier found four of its wiring details
+ * untested — each mutation left this file green — so each has a test here
+ * that goes red without it: dispose clears it, `timersArmed` counts it, a
+ * forgotten session leaves the pending set, and the re-check waits
+ * `PAIR_RECHECK_MS`, not the whole deadline. Plus the cap's own wiring: the
+ * first-seen instant a pending graft reports is handed back to the next one.
+ *
+ * The content path is injected (`graft`), answering PENDING for every session,
+ * so nothing here depends on file mtimes or the real clock's pace; the watcher
+ * still runs for real, because discovery is what registers the sessions.
+ */
+describe('the pending re-check timer, on a manual clock (0.9.2 follow-up)', () => {
+  const TIMER_SLUG = 'c--Users-dev-projects-agent-deck';
+  const TIMER_CORPUS = fileURLToPath(
+    new URL(`../fixtures/cc-2.1.283/projects/${TIMER_SLUG}`, import.meta.url),
+  );
+  const SESSIONS = ['853296cc-eb78-4a6c-b747-cd5417473cc5', 'd860ab28-db10-40dc-8775-ae00eeb21f23'];
+  const PAIR = 'a704ec1707a92b778';
+
+  async function pendingPath(): Promise<{
+    path: AgentDeckDataPath;
+    time: ManualTime;
+    calls: { sessionId: string; options: GraftSessionOptions }[];
+    slugDir: string;
+    firstSeen: number;
+  }> {
+    const projectsRoot = await makeTempDir();
+    const slugDir = join(projectsRoot, TIMER_SLUG);
+    await mkdir(slugDir, { recursive: true });
+    // Main transcripts only: the injected content path reads nothing.
+    for (const id of SESSIONS) await copyFile(join(TIMER_CORPUS, `${id}.jsonl`), join(slugDir, `${id}.jsonl`));
+    const time = new ManualTime(Date.now());
+    const calls: { sessionId: string; options: GraftSessionOptions }[] = [];
+    const firstSeen = Date.now();
+    const graft = (mainTranscript: string, options: GraftSessionOptions): Promise<GraftSessionResult> => {
+      calls.push({ sessionId: basename(mainTranscript, '.jsonl'), options });
+      return Promise.resolve({
+        ok: false,
+        mismatch: {
+          kind: 'schemaMismatch',
+          code: 'subagentMetaMissing',
+          reason: 'transcript has no matching sidecar',
+          field: PAIR,
+        },
+        pending: {
+          agentIds: [PAIR],
+          deadlineMs: Date.now() + PAIR_PENDING_WINDOW_MS,
+          firstSeenMs: { [PAIR]: options.pendingSince?.get(PAIR) ?? firstSeen },
+        },
+        diagnostics: { malformedLines: 0, parsedLines: 0, ignoredLines: 0, skippedFiles: [] },
+      });
+    };
+    const path = await startDataPathOnFreePort((port) => {
+      calls.length = 0;
+      return trackDataPath(
+        new AgentDeckDataPath({
+          workspacePath: 'C:\\Users\\dev\\projects\\agent-deck',
+          projectsRoot,
+          settings: settings({ port }),
+          scheduler: time,
+          tickMs: 0,
+          graft,
+          log: () => {},
+          onEmission: () => {},
+        }),
+      );
+    });
+    await waitFor(() => path.diagnostics.pendingSessions === SESSIONS.length, 'both sessions pending', 10_000);
+    // The emit timer (EMIT_COALESCE_MS, 100) fires; the re-check (250) does not.
+    time.advance(100);
+    return { path, time, calls, slugDir, firstSeen };
+  }
+
+  it('timersArmed counts the pending re-check timer', async () => {
+    const { path, time } = await pendingPath();
+    // With the tick off and the emit timer spent, the re-check is the one timer.
+    expect(time.pendingTimers).toBe(1);
+    expect(path.diagnostics.timersArmed).toBe(1);
+  }, 30_000);
+
+  it('the re-check waits PAIR_RECHECK_MS, not the whole deadline, and hands the first sighting back', async () => {
+    const { time, calls, firstSeen } = await pendingPath();
+    expect(PAIR_RECHECK_MS).toBe(250);
+    const before = calls.length;
+    expect(calls.every((c) => c.options.pendingSince === undefined)).toBe(true);
+    time.advance(PAIR_RECHECK_MS - 100 - 1);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(calls.length, 'nothing re-grafted before the re-check is due').toBe(before);
+    time.advance(1);
+    await waitFor(() => calls.length === before + SESSIONS.length, 'the re-check graft', 5_000);
+    // PAIR_PENDING_CAP_MS counts from the FIRST sighting: the re-graft is
+    // handed the instant the first pending graft reported.
+    for (const call of calls.slice(before)) {
+      expect(call.options.pendingSince?.get(PAIR), call.sessionId).toBe(firstSeen);
+    }
+  }, 30_000);
+
+  it('dispose clears the pending re-check timer', async () => {
+    const { path, time } = await pendingPath();
+    expect(time.pendingTimers).toBe(1);
+    await path.dispose();
+    expect(time.pendingTimers).toBe(0);
+    expect(path.diagnostics.timersArmed).toBe(0);
+    expect(path.diagnostics.pendingSessions).toBe(0);
+  }, 30_000);
+
+  it('a forgotten session leaves the pending set', async () => {
+    const { path, slugDir } = await pendingPath();
+    expect(path.diagnostics.pendingSessions).toBe(2);
+    await rm(join(slugDir, `${SESSIONS[0] as string}.jsonl`));
+    await waitFor(() => !path.model.hasSession(SESSIONS[0] as string), 'the session forgotten', 10_000);
+    expect(path.diagnostics.pendingSessions).toBe(1);
   }, 30_000);
 });

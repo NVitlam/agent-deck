@@ -318,6 +318,10 @@ const PRIVATE_SET: ReadonlyArray<{ readonly re: RegExp; readonly what: string }>
   { re: /^extension\/docs\//i, what: 'docs/ — the private evidence tree, as the artifact names it' },
   { re: /^extension\/spike\//i, what: 'spike/ — the frozen Phase 0 reference, as the artifact names it' },
   { re: /^(extension\/)?(docs|spike)$/i, what: 'a junction enumerated as a single FILE entry — the EISDIR door' },
+  // Not private, but not product either: a demo run's output at the repo root
+  // (ruling of 2026-09-29). Here so every check that walks this set - vsce ls,
+  // the unzipped audit, the planted tree - refuses it in both namings.
+  { re: /^(extension\/)?demo(\/|$)/i, what: 'demo/ - screen-recording output, not product' },
 ];
 
 /**
@@ -346,6 +350,8 @@ const PRIVATE_SET_WITNESSES: readonly string[] = [
   'docs',
   'spike',
   'extension/docs',
+  'demo/numbers/fizzbuzz.js',
+  'extension/demo/numbers/fizzbuzz.js',
 ];
 
 /**
@@ -1052,11 +1058,14 @@ const PLANTED: readonly string[] = [
   // A plain FILE named `spike`. That is the shape vsce reports a directory
   // JUNCTION as, and it is why the bare names exist beside the globs.
   'spike',
+  // The demo run's output (ruling of 2026-09-29).
+  'demo/numbers/fizzbuzz.js',
 ];
 
 function plantPrivateSet(root: string): void {
   mkdirSync(join(root, 'lab'), { recursive: true });
   mkdirSync(join(root, 'docs', 'evidence'), { recursive: true });
+  mkdirSync(join(root, 'demo', 'numbers'), { recursive: true });
   for (const rel of PLANTED) writeFileSync(join(root, ...rel.split('/')), `${SENTINEL}\n`);
 }
 
@@ -1071,6 +1080,24 @@ function vsceLsIn(root: string): readonly string[] {
     .filter((line) => line.length > 0)
     .map((line) => line.split('\\').join('/'));
 }
+
+describe('demo/ is behind both doors (ruling of 2026-09-29)', () => {
+  it('git ignores it, so it is never committed', () => {
+    // `git check-ignore` exits 0 for an ignored path and 1 for one that is
+    // not; `--no-index` asks about the path itself, so the folder need not exist.
+    const ignored = (rel: string): boolean => {
+      try {
+        execFileSync('git', ['check-ignore', '-q', '--no-index', rel], { cwd: REPO_ROOT });
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    expect(ignored('demo/numbers/fizzbuzz.js')).toBe(true);
+    // Anchored: a demo/ anywhere else is not this rule's business.
+    expect(ignored('src/demo/x.ts')).toBe(false);
+  });
+});
 
 describe('the second door: a planted private set', () => {
   it(
@@ -1102,7 +1129,7 @@ describe('the second door: a planted private set', () => {
       try {
         plantPrivateSet(root);
         const files = vsceLsIn(root);
-        // Not one of the eight.
+        // Not one of the nine.
         const shipped = PLANTED.filter((rel) => files.includes(rel));
         expect(shipped, 'the private set would be packaged').toEqual([]);
         // ...and nothing shaped like it either, which catches a path the plant

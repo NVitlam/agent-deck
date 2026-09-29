@@ -15,6 +15,9 @@ export default tseslint.config(
       // The private lab checkout - a separate repository with its own lint and
       // test setup. See `.gitignore`.
       'lab/**',
+      // Screen-recording output at the repo root - not product (ruling of
+      // 2026-09-29). `.gitignore` and `.vscodeignore` deny it too.
+      'demo/**',
     ],
   },
   js.configs.recommended,

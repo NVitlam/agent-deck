@@ -177,7 +177,7 @@ describe('every captured corpus parses through the production path', () => {
     }
   });
 
-  it('spans seven CC releases, each of which the previous posture refused at some point', () => {
+  it('spans seven CC releases, every one accepted by the version window', () => {
     // Vacuity control on the list above: a corpus set that all sat inside the
     // OLD patch box would prove nothing about the change. 2.1.241 and 2.1.246
     // were both hard refusals until this phase, and 2.1.251 is five patches

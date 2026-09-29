@@ -31,7 +31,7 @@ import { agentNodes, graftSession } from './graft.js';
 import type { GraftSessionResult } from './graft.js';
 import { LivenessEngine } from './liveness.js';
 import { SessionModel } from './session.js';
-import { PAIR_PENDING_WINDOW_MS } from '../parser/fingerprint.js';
+import { PAIR_PENDING_CAP_MS, PAIR_PENDING_WINDOW_MS } from '../parser/fingerprint.js';
 import { DEFAULT_DEBOUNCE_MS } from '../watch/watcher.js';
 
 const SLUG = 'c--Users-dev-projects-agent-deck';
@@ -100,6 +100,13 @@ describe('PAIR_PENDING_WINDOW_MS', () => {
   });
 });
 
+describe('PAIR_PENDING_CAP_MS', () => {
+  it('is 30,000 ms, far past the window it caps', () => {
+    expect(PAIR_PENDING_CAP_MS).toBe(30_000);
+    expect(PAIR_PENDING_CAP_MS).toBeGreaterThan(10 * PAIR_PENDING_WINDOW_MS);
+  });
+});
+
 describe.each(ORDERS)('an incomplete pair, $order', ({ withhold, code }) => {
   async function withheld(): Promise<{ staged: Staged; mtimeMs: number; bytes: Buffer; path: string }> {
     const staged = await stage();
@@ -118,6 +125,8 @@ describe.each(ORDERS)('an incomplete pair, $order', ({ withhold, code }) => {
     expect(result.pending).toEqual({
       agentIds: [AGENT],
       deadlineMs: mtimeMs + PAIR_PENDING_WINDOW_MS,
+      // No first sighting was passed in, so this call is the first one.
+      firstSeenMs: { [AGENT]: mtimeMs + 300 },
     });
     // The code the pair becomes if it never completes: a consumer that does
     // not know `pending` refuses with it, which is the safe direction.
@@ -151,6 +160,49 @@ describe.each(ORDERS)('an incomplete pair, $order', ({ withhold, code }) => {
     expect(ids).toHaveLength(12);
     expect(ids).toContain(AGENT);
     if (whole.ok) expect(whole.snapshot.parked).toEqual([]);
+  });
+
+  /*
+   * The cap (ruling of 2026-09-29, the second). The existing file is kept
+   * YOUNG on every call here — "now" is always 100 ms after its mtime, the
+   * shape of a transcript still being appended to — so the window alone would
+   * keep it pending forever. Only the first sighting can end it.
+   */
+  it('stays pending while the file grows, until 30,000 ms after it was FIRST seen pending', async () => {
+    const { staged, mtimeMs } = await withheld();
+    const at = mtimeMs + 100;
+    const firstSeenJustInside = at - PAIR_PENDING_CAP_MS + 1;
+    const inside = await graftSession(staged.main, {
+      now: () => at,
+      pendingSince: new Map([[AGENT, firstSeenJustInside]]),
+    });
+    expect(inside.ok).toBe(false);
+    if (inside.ok) return;
+    expect(inside.pending?.agentIds).toEqual([AGENT]);
+    // The sooner of the two deadlines: the cap's, here.
+    expect(inside.pending?.deadlineMs).toBe(firstSeenJustInside + PAIR_PENDING_CAP_MS);
+    // The first sighting is handed back unchanged, never reset to now.
+    expect(inside.pending?.firstSeenMs).toEqual({ [AGENT]: firstSeenJustInside });
+
+    const capped = await graftSession(staged.main, {
+      now: () => at,
+      pendingSince: new Map([[AGENT, at - PAIR_PENDING_CAP_MS]]),
+    });
+    expect(capped.ok).toBe(false);
+    if (capped.ok) return;
+    expect(capped.pending).toBeUndefined();
+    expect(capped.mismatch.code).toBe(code);
+    expect(capped.mismatch.field).toBe(AGENT);
+  });
+
+  it('a first sighting for a DIFFERENT pair does not cap this one', async () => {
+    const { staged, mtimeMs } = await withheld();
+    const at = mtimeMs + 100;
+    const result = await graftSession(staged.main, {
+      now: () => at,
+      pendingSince: new Map([['a-some-other-pair', at - 10 * PAIR_PENDING_CAP_MS]]),
+    });
+    expect(!result.ok && result.pending !== undefined).toBe(true);
   });
 
   it('a real refusal on a COMPLETE pair still wins over a pending one', async () => {

@@ -1580,6 +1580,7 @@ export async function graftSession(
   const fingerprintOptions: FingerprintOptions = {};
   if (options.pinnedVersion !== undefined) fingerprintOptions.pinnedVersion = options.pinnedVersion;
   if (options.now !== undefined) fingerprintOptions.now = options.now;
+  if (options.pendingSince !== undefined) fingerprintOptions.pendingSince = options.pendingSince;
   const fingerprinted = await fingerprintSession(mainTranscript, fingerprintOptions);
   if (!fingerprinted.ok) {
     return {

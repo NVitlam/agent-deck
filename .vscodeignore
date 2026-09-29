@@ -29,6 +29,10 @@
 # tooling, including its own node_modules) -- same class as .claude/**, and
 # measured shipping 1,200+ of its files into the VSIX until it was denied.
 .opencode/**
+# Screen-recording output at the repo root (ruling of 2026-09-29). vsce walks
+# the working tree, so while demo/ sat here it would have shipped 13 files;
+# src/release/vsix.test.ts's PRIVATE_SET fails any demo/ path in the package.
+demo/**
 .github/**
 .git/**
 .gitattributes

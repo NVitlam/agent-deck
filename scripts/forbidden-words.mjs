@@ -148,17 +148,23 @@ const DEFAULT_SCOPES = [
     heading: '## Claude Code telemetry (optional)',
     label: 'README.md (Claude Code telemetry section)',
   },
-  // v0.7.0 DoD 5.5 — the site's Stats line, between `<!-- g10 -->` markers.
-  // A REGION rather than the whole page: the page is marketing copy written
-  // before G10 and is not G10's subject, and a scope that flagged it would be
-  // suppressed rather than fixed. What this release ADDS is scanned.
+  // v0.7.0 DoD 5.5 — the Stats prose, between `<!-- g10 -->` markers. It sat
+  // on the site until the 2026-09-29 redesign moved the Stats section off the
+  // page; the ruling of that date points the region at the README's Stats
+  // section, which carries the same markers.
   {
     kind: 'region',
-    file: join(REPO_ROOT, 'site', 'index.html'),
+    file: join(REPO_ROOT, 'README.md'),
     start: '<!-- g10 -->',
     end: '<!-- /g10 -->',
-    label: 'site/index.html (g10 region)',
+    label: 'README.md (g10 region)',
   },
+  // Ruling of 2026-09-29 — the redesigned site pages are scanned WHOLE: every
+  // line of visible text in `<body>`, with the scripts, the stylesheet and the
+  // comments removed. The pages were rewritten to the rule, so the scope no
+  // longer has to stop at a marked region.
+  { kind: 'page', file: join(REPO_ROOT, 'site', 'index.html'), label: 'site/index.html (visible text)' },
+  { kind: 'page', file: join(REPO_ROOT, 'site', 'insights.html'), label: 'site/insights.html (visible text)' },
 ];
 
 /**
@@ -325,6 +331,34 @@ function regionLines(file, start, end) {
   return out;
 }
 
+/**
+ * The visible text of an HTML page's `<body>`, one unit per line that carries a
+ * letter: scripts, the stylesheet and comments blanked (line numbers kept),
+ * tags removed, the few entities the pages use decoded. `null` when the page
+ * has no `<body>` — a scope that is not there is a refusal, never an empty pass.
+ */
+function pageLines(file) {
+  const text = readFileSync(file, 'utf8');
+  const from = text.search(/<body\b/iu);
+  const to = text.search(/<\/body>/iu);
+  if (from === -1 || to === -1 || to < from) return null;
+  const blank = (m) => m.replace(/[^\n]/gu, ' ');
+  let body = text.slice(0, to).replace(/[^\n]/gu, (c, at) => (at < from ? ' ' : c));
+  body = body
+    .replace(/<script\b[\s\S]*?<\/script>/giu, blank)
+    .replace(/<style\b[\s\S]*?<\/style>/giu, blank)
+    .replace(/<!--[\s\S]*?-->/gu, blank);
+  const out = [];
+  body.split(/\r?\n/u).forEach((line, index) => {
+    const words = line
+      .replace(/<[^>]*>/gu, ' ')
+      .replace(/&nbsp;/gu, ' ')
+      .replace(/&amp;/gu, '&');
+    if (/[A-Za-z]/u.test(words)) out.push({ text: words.trim(), line: index + 1 });
+  });
+  return out;
+}
+
 function main() {
   const json = process.argv.includes('--json');
   const violations = [];
@@ -350,6 +384,17 @@ function main() {
   };
 
   for (const scope of SCOPES) {
+    if (scope.kind === 'page') {
+      const units = pageLines(scope.file);
+      if (units === null || units.length === 0) {
+        console.error(`forbidden-words: scope ${scope.label} does not exist`);
+        process.exitCode = 1;
+        return;
+      }
+      scanned += 1;
+      scanUnits(scope.file, units);
+      continue;
+    }
     if (scope.kind === 'region') {
       const units = regionLines(scope.file, scope.start, scope.end);
       if (units === null) {

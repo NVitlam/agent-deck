@@ -61,4 +61,18 @@ export default tseslint.config(
       },
     },
   },
+  {
+    // The site's one script runs in a BROWSER, not in Node (ruling of
+    // 2026-09-29). Only the browser globals `site/site.js` uses are listed, so
+    // a new one is a deliberate edit here rather than a blanket allowance.
+    files: ['site/**/*.js'],
+    languageOptions: {
+      globals: {
+        document: 'readonly',
+        navigator: 'readonly',
+        getSelection: 'readonly',
+        setTimeout: 'readonly',
+      },
+    },
+  },
 );

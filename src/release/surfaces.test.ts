@@ -43,7 +43,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_MAX_BODY_BYTES, TELEMETRY_PATHS } from '../hooks/listener.js';
 import { MENU_COMMANDS as SIDEBAR_MENU } from '../view/controls.js';
 import { COST_SOURCE_LABELS } from '../../webview/stats/layout.js';
-import { ABOUT_LINKS, SPONSOR_URL } from '../about.js';
+import { ABOUT_LINKS, INSIGHTS_PAGE_URL, SPONSOR_URL } from '../about.js';
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore -- a plain .mjs script with no declarations; the same import `golden-check.test.ts` makes.
@@ -111,6 +111,12 @@ function pageText(html: string): string {
   );
 }
 const PAGE_TEXT = pageText(PAGE);
+/**
+ * The README as a reader sees it: bold markers dropped, whitespace collapsed.
+ * Since the ruling of 2026-09-29 the README carries the statements the
+ * redesigned index no longer makes.
+ */
+const README_TEXT = flat(README.replace(/\*\*/g, ''));
 
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -155,19 +161,23 @@ function addedBullets(version: string): string[] {
 // (a) one version
 // ---------------------------------------------------------------------------
 
-describe('6.D.2 (a) — package.json, the CHANGELOG and the page state one version', () => {
+describe('6.D.2 (a) — package.json, the CHANGELOG and the README state one version', () => {
   it('the CHANGELOG top heading is the manifest version', () => {
     const top = /^## (\S+) /m.exec(CHANGELOG)?.[1];
     expect(top).toBe(MANIFEST.version);
   });
 
-  it('the page states the manifest version once, in its version element', () => {
-    const element = [...PAGE.matchAll(/<span id="version">([^<]*)<\/span>/g)].map((m) => m[1]);
-    expect(element).toStrictEqual([MANIFEST.version]);
-    // Once on the whole page, as a whole version: `0.7.1` inside `0.7.10` or
+  it('the README states the manifest version once, in its version line', () => {
+    // Ruling of 2026-09-29: the redesigned page shows no version, so the
+    // statement moved to the README, word for word as the page had it.
+    const line = [...README.matchAll(/^VS Code extension · Open source · (\S+)$/gm)].map((m) => m[1]);
+    expect(line).toStrictEqual([MANIFEST.version]);
+    // Once in the whole README, as a whole version: `0.7.1` inside `0.7.10` or
     // `10.7.1` is not a second statement of it.
     const whole = new RegExp(`(?<![\\d.])${escapeRegExp(MANIFEST.version)}(?![\\d.])`, 'g');
-    expect(PAGE.match(whole) ?? []).toHaveLength(1);
+    expect(README.match(whole) ?? []).toHaveLength(1);
+    // And the page no longer states one at all, so it cannot go stale.
+    expect(PAGE.match(whole) ?? []).toHaveLength(0);
     // Vacuity control: the pattern does find a version and does skip a longer one.
     expect('v 0.7.1 and 0.7.10'.match(/(?<![\d.])0\.7\.1(?![\d.])/g)).toHaveLength(1);
   });
@@ -181,12 +191,12 @@ interface KeywordRow {
   readonly version: '0.7.0' | '0.7.1' | '0.8.0';
   /** The bullet's bold lead, exactly as the CHANGELOG writes it. */
   readonly bullet: string;
-  /** A phrase a reader of either page would search for. */
+  /** A phrase a reader of the README would search for. */
   readonly keyword: string;
   /** Present in README.md. Every row is `true` at commit; a row that cannot be is reported, not deleted. */
   readonly readme: boolean;
-  /** Present in site/index.html's text. */
-  readonly site: boolean;
+  // The `site` column (present in site/index.html's text) moved to the README
+  // with the ruling of 2026-09-29: the redesigned index lists no features.
 }
 
 /**
@@ -194,75 +204,68 @@ interface KeywordRow {
  * `### Added` bullet of the two entries, in CHANGELOG order.
  */
 const KEYWORD_TABLE: readonly KeywordRow[] = [
-  { version: '0.7.0', bullet: 'A Stats view, and a local history behind it.', keyword: 'Stats view', readme: true, site: true },
-  { version: '0.7.0', bullet: 'Tools that stop making progress are shown as stalled.', keyword: 'stalled', readme: true, site: true },
-  { version: '0.7.0', bullet: 'The Stats view', keyword: 'Loops & churn', readme: true, site: true },
-  { version: '0.7.0', bullet: 'The history stays on your machine.', keyword: 'Clear Stats History', readme: true, site: true },
-  { version: '0.7.0', bullet: 'Your own prices, for a cost the engine does not report.', keyword: 'agentDeck.pricing', readme: true, site: true },
-  { version: '0.7.0', bullet: 'An extension API.', keyword: 'extension API', readme: true, site: true },
-  { version: '0.7.0', bullet: 'An activity-bar entry.', keyword: 'activity bar', readme: true, site: true },
-  { version: '0.7.0', bullet: 'The canvas re-fits itself.', keyword: 're-fit', readme: true, site: true },
+  { version: '0.7.0', bullet: 'A Stats view, and a local history behind it.', keyword: 'Stats view', readme: true },
+  { version: '0.7.0', bullet: 'Tools that stop making progress are shown as stalled.', keyword: 'stalled', readme: true },
+  { version: '0.7.0', bullet: 'The Stats view', keyword: 'Loops & churn', readme: true },
+  { version: '0.7.0', bullet: 'The history stays on your machine.', keyword: 'Clear Stats History', readme: true },
+  { version: '0.7.0', bullet: 'Your own prices, for a cost the engine does not report.', keyword: 'agentDeck.pricing', readme: true },
+  { version: '0.7.0', bullet: 'An extension API.', keyword: 'extension API', readme: true },
+  { version: '0.7.0', bullet: 'An activity-bar entry.', keyword: 'activity bar', readme: true },
+  { version: '0.7.0', bullet: 'The canvas re-fits itself.', keyword: 're-fit', readme: true },
   {
     version: '0.7.0',
     bullet: 'Stalled `AskUserQuestion` and `ExitPlanMode` calls read "waiting on you".',
     keyword: 'waiting on you',
     readme: true,
-    site: true,
   },
-  { version: '0.7.0', bullet: 'The tool-call drawer follows the latest call', keyword: 'follows new calls', readme: true, site: true },
+  { version: '0.7.0', bullet: 'The tool-call drawer follows the latest call', keyword: 'follows new calls', readme: true },
   {
     version: '0.7.1',
     bullet: "Claude Code's OpenTelemetry export, received — optional, off by default.",
     keyword: 'OpenTelemetry',
     readme: true,
-    site: true,
   },
   {
     version: '0.7.1',
     bullet: 'A cost for Claude Code sessions, estimated by Claude Code.',
     keyword: 'estimated by Claude Code',
     readme: true,
-    site: true,
   },
-  { version: '0.7.1', bullet: 'Tool durations where the session states none', keyword: 'tool duration', readme: true, site: true },
-  { version: '0.7.1', bullet: '`agentDeck.telemetry.enabled`', keyword: 'agentDeck.telemetry.enabled', readme: true, site: true },
+  { version: '0.7.1', bullet: 'Tool durations where the session states none', keyword: 'tool duration', readme: true },
+  { version: '0.7.1', bullet: '`agentDeck.telemetry.enabled`', keyword: 'agentDeck.telemetry.enabled', readme: true },
   {
     version: '0.7.1',
     bullet: "Telemetry figures on the Agent Deck output channel's counters line",
     keyword: 'unmatched',
     readme: true,
-    site: true,
   },
   // v0.8.0 Phase 7, DoD 7.D — reviewed by hand against the entry, one row per bullet.
-  { version: '0.8.0', bullet: 'A Tools part in the Stats view.', keyword: 'longest call', readme: true, site: true },
+  { version: '0.8.0', bullet: 'A Tools part in the Stats view.', keyword: 'longest call', readme: true },
   {
     version: '0.8.0',
     bullet: "A session's own timings in the Tokens part.",
     keyword: 'time to the first tool call',
     readme: true,
-    site: true,
   },
-  { version: '0.8.0', bullet: 'Tokens a minute in Trends', keyword: 'tokens a minute', readme: true, site: true },
+  { version: '0.8.0', bullet: 'Tokens a minute in Trends', keyword: 'tokens a minute', readme: true },
   {
     version: '0.8.0',
     bullet: 'A time and a gap on every row of the tool-call drawer.',
     keyword: 'gap between calls',
     readme: true,
-    site: true,
   },
   {
     version: '0.8.0',
     bullet: 'Subagents whose spawning call has no result',
     keyword: 'spawning call has no result',
     readme: true,
-    site: true,
   },
-  { version: '0.8.0', bullet: 'A Tweaks tab in the sidebar', keyword: 'Tweaks', readme: true, site: true },
-  { version: '0.8.0', bullet: 'Oversize Codex transcripts are read in part.', keyword: 'read in part', readme: true, site: true },
-  { version: '0.8.0', bullet: '`foreign` on the counters line.', keyword: 'foreign', readme: true, site: true },
+  { version: '0.8.0', bullet: 'A Tweaks tab in the sidebar', keyword: 'Tweaks', readme: true },
+  { version: '0.8.0', bullet: 'Oversize Codex transcripts are read in part.', keyword: 'read in part', readme: true },
+  { version: '0.8.0', bullet: '`foreign` on the counters line.', keyword: 'foreign', readme: true },
 ];
 
-describe('6.D.2 (b) — every Added bullet of 0.7.0, 0.7.1 and 0.8.0 is on the README and the page', () => {
+describe('6.D.2 (b) — every Added bullet of 0.7.0, 0.7.1 and 0.8.0 is on the README', () => {
   it('the table has one row per Added bullet, in order, both ways, with the count beside it', () => {
     for (const version of ['0.7.0', '0.7.1', '0.8.0'] as const) {
       const bullets = addedBullets(version);
@@ -277,16 +280,10 @@ describe('6.D.2 (b) — every Added bullet of 0.7.0, 0.7.1 and 0.8.0 is on the R
   });
 
   it.each(KEYWORD_TABLE)(
-    '$keyword — measured presence equals the table, and the table says both',
+    '$keyword — measured presence equals the table, and the table says present',
     (row) => {
-      expect({ readme: hasKeyword(README, row.keyword), site: hasKeyword(PAGE_TEXT, row.keyword) }).toStrictEqual({
-        readme: row.readme,
-        site: row.site,
-      });
-      expect({ readme: row.readme, site: row.site }, `unsatisfied row: ${row.bullet}`).toStrictEqual({
-        readme: true,
-        site: true,
-      });
+      expect(hasKeyword(README, row.keyword)).toBe(row.readme);
+      expect(row.readme, `unsatisfied row: ${row.bullet}`).toBe(true);
     },
   );
 
@@ -298,7 +295,26 @@ describe('6.D.2 (b) — every Added bullet of 0.7.0, 0.7.1 and 0.8.0 is on the R
   });
 });
 
-describe('6.D.1 — the page describes 0.7.0 and 0.7.1 as shipped', () => {
+/** The `- ` items of the list that follows a `**heading**` line in the README. */
+function readmeListAfter(heading: string): string[] {
+  const at = README.indexOf(`\n**${heading}**\n\n`);
+  if (at === -1) return [];
+  const lines = README.slice(at).split('\n').slice(3);
+  const items: string[] = [];
+  for (const line of lines) {
+    if (!line.startsWith('- ')) break;
+    items.push(line.slice(2));
+  }
+  return items;
+}
+
+/*
+ * Ruling of 2026-09-29: the redesigned index no longer describes the feature
+ * set, so these statements are asserted on the README, which carries them
+ * (the menu sentence, the socket sentence and the never-list added there word
+ * for word from the old page).
+ */
+describe('6.D.1 — the README describes 0.7.0 and 0.7.1 as shipped', () => {
   it('names the four parts of the Stats view, the retention setting and the several-windows arrangement', () => {
     for (const phrase of [
       'Files',
@@ -309,25 +325,24 @@ describe('6.D.1 — the page describes 0.7.0 and 0.7.1 as shipped', () => {
       'Several windows, one port',
       'estimated by Claude Code',
     ]) {
-      expect(PAGE_TEXT, phrase).toContain(phrase);
+      expect(README_TEXT, phrase).toContain(phrase);
     }
   });
 
   it('lists the sidebar menu as src/view/controls.ts declares it', () => {
-    for (const entry of SIDEBAR_MENU) expect(PAGE_TEXT, entry.label).toContain(entry.label);
+    for (const entry of SIDEBAR_MENU) expect(README_TEXT, entry.label).toContain(entry.label);
     expect(SIDEBAR_MENU.length).toBeGreaterThan(0);
     // IN ORDER, not only present (verifier round 9.33, C4: the list reversed
-    // on the page left this green). The page lists them once, in brackets
+    // on the page left this green). The README lists them once, in brackets
     // after "Menu".
-    const list = /Menu \(([^)]*)\)/.exec(PAGE_TEXT)?.[1] ?? '';
+    const list = /Menu \(([^)]*)\)/.exec(README_TEXT)?.[1] ?? '';
     expect(list.split(',').map((label) => label.trim())).toStrictEqual(
       SIDEBAR_MENU.map((entry) => entry.label),
     );
   });
 
   it('"What it never does" is the four sentences it was, and nothing was added to it', () => {
-    const list = /<article class="no"><h3>What it never does<\/h3><ul>([\s\S]*?)<\/ul>/.exec(PAGE)?.[1] ?? '';
-    const items = [...list.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => m[1]);
+    const items = readmeListAfter('What it never does');
     expect(items).toStrictEqual([
       'Write to agent settings, transcripts, or databases.',
       'Launch, proxy, steer, or configure an agent.',
@@ -340,7 +355,8 @@ describe('6.D.1 — the page describes 0.7.0 and 0.7.1 as shipped', () => {
     // Since 0.7.0 a second window reaches the first on 127.0.0.1: one loopback
     // client (`egress.test.ts` pins it). The trust strip said otherwise.
     expect(PAGE_TEXT).not.toMatch(/outbound requests/i);
-    expect(PAGE_TEXT).toContain('Every socket it opens is on 127.0.0.1.');
+    expect(README_TEXT).not.toMatch(/outbound requests/i);
+    expect(README_TEXT).toContain('Every socket it opens is on 127.0.0.1.');
   });
 });
 
@@ -348,9 +364,16 @@ describe('6.D.1 — the page describes 0.7.0 and 0.7.1 as shipped', () => {
 // (c) images
 // ---------------------------------------------------------------------------
 
-/** A PNG's pixel size, from its IHDR chunk; `null` for anything else. */
-function pngSize(file: string): { width: number; height: number } | null {
+/**
+ * A PNG's pixel size from its IHDR chunk, or a GIF's from its logical screen
+ * descriptor (ruling of 2026-09-29: the hero is a GIF); `null` for anything else.
+ */
+function imageSize(file: string): { width: number; height: number } | null {
   const bytes = readFileSync(file);
+  const gif = bytes.toString('latin1', 0, 6);
+  if (gif === 'GIF87a' || gif === 'GIF89a') {
+    return { width: bytes.readUInt16LE(6), height: bytes.readUInt16LE(8) };
+  }
   const signature = '89504e470d0a1a0a';
   if (bytes.subarray(0, 8).toString('hex') !== signature) return null;
   if (bytes.toString('latin1', 12, 16) !== 'IHDR') return null;
@@ -373,7 +396,7 @@ describe('6.D.2 (c) — every image either page references exists, is non-empty,
     }
   });
 
-  it('page: every <img> names a non-empty PNG under site/, with width and height equal to its pixels', () => {
+  it('page: every <img> names a non-empty PNG or GIF under site/, with width and height equal to its pixels', () => {
     expect(pageImages.length).toBeGreaterThan(0);
     for (const tag of pageImages) {
       const src = /\bsrc="([^"]+)"/.exec(tag)?.[1] ?? '';
@@ -382,18 +405,21 @@ describe('6.D.2 (c) — every image either page references exists, is non-empty,
       const path = join(ROOT, 'site', src);
       expect(existsSync(path), `site/${src} is missing`).toBe(true);
       expect(statSync(path).size, `site/${src} is empty`).toBeGreaterThan(0);
-      expect(pngSize(path), `site/${src}: the width/height attributes are not the file's`).toStrictEqual({
+      expect(imageSize(path), `site/${src}: the width/height attributes are not the file's`).toStrictEqual({
         width,
         height,
       });
     }
   });
 
-  it('reads a PNG size, and reads nothing from a file that is not one', () => {
+  it('reads a PNG and a GIF size, and reads nothing from a file that is neither', () => {
     // Vacuity control for the comparison above: a wrong reader returning the
     // attributes back would pass it.
-    expect(pngSize(join(ROOT, 'media', 'icon.png'))?.width).toBeGreaterThan(0);
-    expect(pngSize(join(ROOT, 'media', 'activity-icon.svg'))).toBeNull();
+    expect(imageSize(join(ROOT, 'media', 'icon.png'))?.width).toBeGreaterThan(0);
+    expect(imageSize(join(ROOT, 'site', 'media', 'agent-deck-hero.gif'))).toStrictEqual({ width: 1100, height: 742 });
+    expect(imageSize(join(ROOT, 'media', 'activity-icon.svg'))).toBeNull();
+    // Both pages' images are counted, not only the index's.
+    expect(pageImages.length).toBe(3);
   });
 });
 
@@ -760,29 +786,40 @@ describe('9.35 / 9.37 — the plans, on the index and on the Insights subpage', 
     expect(INSIGHTS_PAGE.match(/https:\/\/buy\.polar\.sh\/[^"]+/g)).toHaveLength(6);
   });
 
-  it('each card is its plan, its amount and its own checkout, in its column', () => {
-    const column = (heading: string): string => {
-      const at = INSIGHTS_PAGE.indexOf(`<h3>${heading}</h3>`);
-      expect(at, heading).toBeGreaterThan(-1);
-      return INSIGHTS_PAGE.slice(at, INSIGHTS_PAGE.indexOf('</div>', at));
-    };
-    for (const [heading, plan, amount, url] of CHECKOUTS) {
-      const card = new RegExp(
-        `<article class="plan"><h4>${plan}</h4><p class="price">\\${amount}</p><p>[^<]+</p><a class="button primary" href="${url}">`,
-      );
-      expect(column(heading), `${heading} / ${plan}`).toMatch(card);
+  // The plan-card markup check was retired by the ruling of 2026-09-29; the
+  // redesigned subpage is a price table, held to its checkouts below.
+
+  it('each price row states the amount of both its checkouts, and the rows cover all six', () => {
+    const amountOf = new Map<string, string>(CHECKOUTS.map((c) => [c[3], c[2]]));
+    const rows = [...INSIGHTS_PAGE.matchAll(/<div class="row" role="row">([\s\S]*?)<\/div>/g)].map((m) => m[1] ?? '');
+    expect(rows).toHaveLength(3);
+    const seen: string[] = [];
+    for (const row of rows) {
+      const price = /<span class="price" role="cell">(\$\d+)<\/span>/.exec(row)?.[1];
+      const urls = [...row.matchAll(/href="(https:\/\/buy\.polar\.sh\/[^"]+)"/g)].map((m) => m[1] ?? '');
+      expect(urls, row).toHaveLength(2);
+      for (const url of urls) expect(amountOf.get(url), `${url} sits under ${String(price)}`).toBe(price);
+      seen.push(...urls);
     }
+    expect(seen.sort()).toStrictEqual(CHECKOUTS.map((c) => c[3]).sort());
   });
 
-  it('the three amounts are the only prices on either page', () => {
-    for (const html of [PAGE, INSIGHTS_PAGE]) {
-      const prices = new Set(html.match(/\$\d+/g) ?? []);
-      expect([...prices].sort()).toStrictEqual(['$10', '$100', '$50']);
-    }
+  it('the amounts shown on the site are exactly the six checkout products’ amounts, and nothing else', () => {
+    // Ruling of 2026-09-29: across the site, not per page — the redesigned
+    // index shows no price at all.
+    const shown = new Set((PAGE + INSIGHTS_PAGE).match(/\$\d+/g) ?? []);
+    expect([...shown].sort()).toStrictEqual([...new Set(CHECKOUTS.map((c) => c[2]))].sort());
+    expect(PAGE.match(/\$\d+/g) ?? []).toStrictEqual([]);
   });
 
-  it('carries the one line under the plans, verbatim', () => {
-    expect(INSIGHTS_PAGE).toContain(
+  it('the README states the three amounts as the only prices, and the one line under the plans, verbatim', () => {
+    // Moved to the README by the ruling of 2026-09-29, word for word as the
+    // old pages had them. Whole-dollar amounts only: the pricing section's
+    // worked example (`$0.0739` for a token count) is a per-token cost, not a
+    // product price.
+    expect([...new Set(README.match(/\$\d+(?![\d.])/g) ?? [])].sort()).toStrictEqual(['$10', '$100', '$50']);
+    expect(README).toContain('$0.0739');
+    expect(README).toContain(
       'Every plan is the same product; a subscription renews your key automatically, a one-time purchase does not.',
     );
   });
@@ -798,13 +835,12 @@ describe('9.35 / 9.37 — the plans, on the index and on the Insights subpage', 
     expect(/lifetime/i.test('<b>Lifetime, early bird</b>')).toBe(true);
   });
 
-  it('the index links the subpage from its nav and from a card, and states the amounts', () => {
-    expect(PAGE).toMatch(/<div class="links">[^]*?<a href="insights\.html">Insights<\/a>[^]*?<\/div>/);
-    // Inside ONE card (verifier round 9.39, D4): the lazy match crossed
-    // article boundaries, so any earlier card plus a later link satisfied it.
-    expect(PAGE).toMatch(/<article class="card">(?:(?!<\/article>)[^])*<a href="insights\.html">/);
-    const plans = PAGE.slice(PAGE.indexOf('id="plans"'));
-    for (const amount of ['$10', '$50', '$100']) expect(plans).toContain(amount);
+  it('the README links the Insights page from its Insights section', () => {
+    // The index's nav and card links moved to the README with the ruling of
+    // 2026-09-29; the index still links the subpage, from its teaser.
+    const section = mdSection(README, '## Insights');
+    expect(section).toContain(`<${INSIGHTS_PAGE_URL}>`);
+    expect(PAGE).toMatch(/<a class="btn" href="insights\.html">/);
   });
 
   it('links Sponsors at the same url the About entry and the manifest use, on both pages', () => {
@@ -815,13 +851,14 @@ describe('9.35 / 9.37 — the plans, on the index and on the Insights subpage', 
     expect(ABOUT_LINKS.find((link) => link.label === 'Sponsor')?.url).toBe(SPONSOR_URL);
   });
 
-  it('the subpage names the support address, and the never-list verbatim from the Insights spec', () => {
-    expect(INSIGHTS_PAGE).toContain('<a href="mailto:support@agent-deck.app">support@agent-deck.app</a>');
+  it('the subpage links the support address in its footer, and the README carries the never-list verbatim', () => {
+    const footer = /<footer\b[\s\S]*?<\/footer>/.exec(INSIGHTS_PAGE)?.[0] ?? '';
+    expect(footer).toContain('<a href="mailto:support@agent-deck.app">support@agent-deck.app</a>');
     // agent-deck-insights-spec.md §A: "What is never done: reading
     // transcripts, reading files, network calls from the extension, writing
-    // under any engine's data directory." Four items, in its order.
-    const never = /<article class="no">[^]*?<ul>([^]*?)<\/ul>/.exec(INSIGHTS_PAGE)?.[1] ?? '';
-    expect([...never.matchAll(/<li>([^<]*)<\/li>/g)].map((m) => m[1])).toStrictEqual([
+    // under any engine's data directory." Four items, in its order — on the
+    // README since the ruling of 2026-09-29.
+    expect(readmeListAfter('Never')).toStrictEqual([
       'reading transcripts',
       'reading files',
       'network calls from the extension',
@@ -829,11 +866,12 @@ describe('9.35 / 9.37 — the plans, on the index and on the Insights subpage', 
     ]);
   });
 
-  it('says Agent Deck itself is unaffected, on both pages', () => {
-    for (const html of [PAGE, INSIGHTS_PAGE]) {
-      expect(html).toContain('Agent Deck itself is unaffected');
-      expect(html).toContain('no feature moves behind a plan');
-    }
+  it('says Agent Deck itself is unaffected: on the README in full, and on both pages in their own words', () => {
+    expect(README).toContain(
+      'Agent Deck itself is unaffected: no feature moves behind a plan, and nothing it already does depends on Insights being installed.',
+    );
+    expect(INSIGHTS_PAGE).toContain('nothing in it moves behind a plan');
+    expect(PAGE).toContain('Nothing in it will ever move behind a paywall.');
   });
 });
 

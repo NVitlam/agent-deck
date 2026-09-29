@@ -2,6 +2,8 @@
 
 [Agent Deck on the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck)
 
+VS Code extension · Open source · 0.9.2
+
 **Live observability for agent swarms, inside VS Code.** When a coding agent spawns subagents, the
 terminal shows you one scrolling column and no shape. Agent Deck shows you the shape: every session
 on the machine, the tree of agents inside each one, which agent spawned which, what each is running
@@ -77,6 +79,8 @@ one or scroll away.
 and churn chains, tokens per agent, and trends across the sessions stored on this machine. Facts
 only; what each term means is in [Stats](#stats).
 
+The sidebar carries a strip of three tabs, one open at a time: **Menu** (Open Deck, Open Statistics, Open Insights, Pick Agent, Show Payload, Clear History, Show Diagnostics, Settings, Clear Stats History, About), where the three after Open Insights appear only while an Insights provider offers them.
+
 **Two numbers, and a third where the engine states one.** **Context** is the last message's prompt —
 a level, what is in the window now, which goes up and down. **Burn** is the running total across the
 session — it only goes up. **Window** sits beside them and is read from the session itself: a Codex
@@ -101,7 +105,7 @@ Agent Deck observes. It never acts.
   dropped. The only connection it makes is a second VS Code window reaching that same listener on
   `127.0.0.1` (see [Several windows, one port](#several-windows-one-port)). The
   OpenCode side opens **no socket at all**, and Codex's hooks arrive on that same one listener —
-  there is no second port for a second engine.
+  there is no second port for a second engine. Every socket it opens is on 127.0.0.1.
 - **Reasoning and thinking content is never displayed.** It is dropped where the data is read, before
   anything reaches the panel, in all three engines — including a Codex spawn's encrypted task
   description, which is never decoded. Tool payloads are truncated with an explicit marker.
@@ -111,6 +115,13 @@ Agent Deck observes. It never acts.
 
 The single qualification to "read-only" — what a read of OpenCode's store touches beside it — is
 measured in [`SECURITY.md`](SECURITY.md) §2.
+
+**What it never does**
+
+- Write to agent settings, transcripts, or databases.
+- Launch, proxy, steer, or configure an agent.
+- Keep session content, or ship a price table.
+- Send data to a network service.
 
 The live deck lives in memory and is discarded when the window closes. The one thing written to
 disk is the stats history — derived numbers, never session content — kept in VS Code's own storage
@@ -169,6 +180,8 @@ network-fetched `models_cache.json`, and every local database Codex keeps there.
 before any path is joined or opened, so there is no moment at which one of them has been handed to
 the filesystem. [`SECURITY.md`](SECURITY.md) enumerates the list.
 
+No App Server, no socket to Codex; secret-bearing files are never opened.
+
 **No socket to Codex. No App Server, no `app-server proxy`, no second port.** Codex ships an App
 Server; Agent Deck never connects to it, and that is a boundary this product keeps rather than a
 feature it has not got round to. Codex hooks POST to the *same* loopback listener Claude Code's do
@@ -183,6 +196,7 @@ nor the prerelease tag is compared at all**. What refuses a session is the **str
 records actually read are not what the corpus pinned, that session renders `unsupported` rather
 than a half-built tree. The anchor moves one way only — by harvesting a corpus from a new release —
 and moving it cannot make a version work, because the parts it names are the parts nothing compares.
+Major 0; minor ±1. Patch and prerelease tags are not compared.
 
 **One thing Codex gives that the others do not.** Its transcripts state the model's context window,
 so a Codex session's **window** figure is a real number read from the session. It is stated in two
@@ -678,6 +692,8 @@ nobody can see is not a refusal. Every other session is matched to the folders a
 
 ## Stats
 
+<!-- g10 -->
+
 **What each session touched, repeated and spent — as numbers.** **Menu ▸ Open Statistics** in the sidebar,
 or **Agent Deck: Open Statistics** in the Command Palette, switches the panel to its Stats view, in
 five parts: **Files** (every file a session touched, with its reads, edits, writes and errors),
@@ -934,6 +950,8 @@ raw output, `pickAgent`, `showPayload` or `clearHistory` only when you press tha
 `investigate` only when you press Investigate Report, and subscribes once through `onDidChange`; it
 calls nothing else.
 
+<!-- /g10 -->
+
 ## Insights
 
 **Menu ▸ Open Insights** — a surface of the one panel. Nothing Agent Deck does depends on Insights,
@@ -952,6 +970,23 @@ surface says how many were left out. Under the tiles, one line of fact: *Deliber
 a real run"*, with made-up ids; it changes each time you come back. And one tile, **Get Agent Deck
 Insights**, which asks before it opens <https://agent-deck.app/insights.html> in your browser — the Insights page, with
 what it does, what it never does, and the plans.
+
+| Term | Price | Plans |
+|---|---|---|
+| 1 month | $10 | Pay once for one month, or subscribe monthly. |
+| 6 months | $50 | Pay once for six months, or subscribe every six months. |
+| 1 year | $100 | Pay once for a year, or subscribe yearly. |
+
+Every plan is the same product; a subscription renews your key automatically, a one-time purchase does not.
+
+Agent Deck itself is unaffected: no feature moves behind a plan, and nothing it already does depends on Insights being installed.
+
+**Never**
+
+- reading transcripts
+- reading files
+- network calls from the extension
+- writing under any engine's data directory
 
 **With a provider registered.** On the left, the provider's reports — each with its date, how many
 findings it has and the agent CLI it used, newest first, a refused one marked *refused*. On the

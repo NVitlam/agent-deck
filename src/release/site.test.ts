@@ -51,7 +51,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { CODEX_VERSION_WINDOW, PINNED_CODEX_VERSION } from '../codex/fingerprint.js';
-import { INSIGHTS_GET_LINK, INSIGHTS_PAGE_URL, aboutConfirmation } from '../about.js';
+import { ABOUT_TEXT, INSIGHTS_GET_LINK, INSIGHTS_PAGE_URL, aboutConfirmation } from '../about.js';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -103,6 +103,11 @@ const PAGES: Readonly<Record<string, string>> = {
   'insights.html': INSIGHTS,
   'thanks.html': THANKS,
 };
+/**
+ * The ruling of 2026-09-29 moved the Codex statements and the g10 Stats region
+ * off the redesigned index page; the README is where they are asserted now.
+ */
+const README = readText('README.md');
 const MANIFEST = JSON.parse(readText('package.json')) as {
   publisher: string;
   repository: { url: string };
@@ -130,17 +135,21 @@ const SITE_IMAGES: readonly string[] = [
 ];
 
 /**
- * The two screenshots of the Insights subpage (v0.9.0 DoD 9.34).
+ * The site images with NO byte-identical `media/` twin, pinned by sha256 instead
+ * — a changed file is a deliberate edit to this list, and a vanished one is red.
  *
- * They have NO `media/` twin: they are the Insights extension's own captures
- * (its `lab/docs/evidence/phase-3/`, sanitized there), and the README of
- * THIS extension does not show them. So they cannot be compared to a twin, and
- * are pinned by sha256 instead — a changed screenshot is a deliberate edit to
- * this list, and a vanished one is red.
+ * `insights-preview.png` is the Insights report view (v0.9.0 DoD 9.34; retaken
+ * for the 2026-09-29 redesign at 1600 px wide). The README of THIS extension
+ * does not show it. `insights-panel.png` was retired with the redesign, which
+ * references it nowhere.
+ *
+ * `agent-deck-hero.gif` is the redesign's hero. Its `media/` counterpart is
+ * still the previous GIF: the root swap ships with the next extension publish
+ * (ruling of 2026-09-29), after which it can move to `SITE_IMAGES` as a twin.
  */
-const INSIGHTS_IMAGES: Readonly<Record<string, string>> = {
-  'insights-preview.png': '84d28765698176a7e5163984d589455df355b1ad22d57f2b3d046ad6a3e0f659',
-  'insights-panel.png': '4ecb58c3db4d2b1ca81e760f1bcd4a627ab97403e8059432ed239b65845b8d21',
+const PINNED_IMAGES: Readonly<Record<string, string>> = {
+  'insights-preview.png': 'd9c0767151a530cb8e60700a4412dff2d231ea895bad893d48c3b8e2914de034',
+  'agent-deck-hero.gif': '422a15583218485a21d6d108e8cac31b605d4d83ea9e4372c44f794536f485c3',
 };
 
 /**
@@ -149,8 +158,21 @@ const INSIGHTS_IMAGES: Readonly<Record<string, string>> = {
  * `buy.polar.sh` since v0.9.0 DoD 9.37: the six plan checkouts. A link is
  * NAVIGATION, not a fetch — the CSP below still lets no page load anything
  * from any host — so the allow-list states where a reader can be SENT.
+ * `nvitlam.github.io` since the ruling of 2026-09-29: the footer's author link.
  */
-const ALLOWED_HOSTS: readonly string[] = ['github.com', 'marketplace.visualstudio.com', 'buy.polar.sh'];
+const ALLOWED_HOSTS: readonly string[] = [
+  'github.com',
+  'marketplace.visualstudio.com',
+  'buy.polar.sh',
+  'nvitlam.github.io',
+];
+
+/**
+ * The pages that load `site.js`, named rather than derived (rule 19): a page
+ * gaining a script tag is a deliberate edit to this list.
+ */
+const SCRIPTED_PAGES: readonly string[] = ['index.html'];
+const SITE_SCRIPT_TAG = '<script src="site.js" defer></script>';
 
 /** Every absolute http(s) URL in a page, in document order. */
 function pageUrls(html: string = PAGE): string[] {
@@ -203,21 +225,23 @@ describe('the page exists as a publishable tree', () => {
     // comparison accidentally written against an empty listing passes
     // vacuously, and a count is the cheapest thing that goes red when it does.
     const tracked = TRACKED_SITE.filter((p) => p.startsWith('site/media/')).sort();
-    const expected = [...SITE_IMAGES, ...Object.keys(INSIGHTS_IMAGES)].map((n) => `site/media/${n}`).sort();
+    const expected = [...SITE_IMAGES, ...Object.keys(PINNED_IMAGES)].map((n) => `site/media/${n}`).sort();
 
     expect(tracked).toStrictEqual(expected);
     expect(expected).toStrictEqual(tracked);
     // SEVEN SINCE v0.8.0 DoD 7.D: the four 0.7.1 stills plus the three 7.12
-    // captures; NINE since v0.9.0 DoD 9.34, with the Insights subpage's two.
+    // captures; NINE since v0.9.0 DoD 9.34, with the Insights subpage's two;
+    // still NINE after the 2026-09-29 redesign: `insights-panel.png` out, the
+    // hero GIF in.
     expect(tracked).toHaveLength(9);
   });
 
-  it('the Insights subpage screenshots are the pinned bytes', () => {
-    for (const [name, hash] of Object.entries(INSIGHTS_IMAGES)) {
+  it('the images without a media/ twin are the pinned bytes', () => {
+    for (const [name, hash] of Object.entries(PINNED_IMAGES)) {
       expect(sha256(`site/media/${name}`), `site/media/${name} changed`).toBe(hash);
       expect(readFileSync(join(ROOT, `site/media/${name}`)).byteLength).toBeGreaterThan(1024);
     }
-    expect(Object.keys(INSIGHTS_IMAGES)).toHaveLength(2);
+    expect(Object.keys(PINNED_IMAGES)).toHaveLength(2);
   });
 
   it('every site image is byte-identical to its media/ twin', () => {
@@ -258,8 +282,13 @@ describe('the page exists as a publishable tree', () => {
     // left; `surfaces.test.ts` asserts none of them survives. A fragment on
     // a page (`insights.html#plans`) is the page, and a `mailto:` is not
     // an asset.
+    //
+    // Ruling of 2026-09-29: `data-img` too. The index's view switcher names
+    // three of its four screenshots only there, and `site.js` swaps them in.
+    const dataImgs = [...PAGE.matchAll(/\sdata-img="([^"]+)"/g)].map((m) => m[1] ?? '');
+    expect(dataImgs).toStrictEqual(['media/deck.png', 'media/tree.png', 'media/inspector.png', 'media/stats_tokens.png']);
     for (const [name, html] of Object.entries(PAGES)) {
-      const refs = [...html.matchAll(/(?:src|href)="([^"]+)"/g)]
+      const refs = [...html.matchAll(/(?:src|href|data-img)="([^"]+)"/g)]
         .map((m) => m[1] ?? '')
         .filter((ref) => !ref.startsWith('#') && !/^https?:/.test(ref) && !ref.startsWith('mailto:'))
         .map((ref) => ref.replace(/#.*$/, ''));
@@ -274,7 +303,7 @@ describe('the page exists as a publishable tree', () => {
 });
 
 describe('the page reaches nothing it should not', () => {
-  it('every absolute URL is on one of the two allowed hosts', () => {
+  it('every absolute URL is on one of the allowed hosts', () => {
     // G5's posture applied to the page a reader loads rather than to the
     // extension. A web font, a CDN script or an analytics beacon would each be
     // one line and would each make the project's zero-egress claim read as a
@@ -304,8 +333,22 @@ describe('the page reaches nothing it should not', () => {
       expect(csp).toContain("img-src 'self'");
       expect(csp).toContain("base-uri 'none'");
       expect(csp).toContain("form-action 'none'");
-      expect(csp, `${name}: the CSP admits a script source`).not.toMatch(/script-src(?! 'none')/);
+      // Ruling of 2026-09-29: the one script source a page may name is
+      // `'self'`, written exactly so. No other host, no `unsafe-inline`, no
+      // hash or nonce, and no `script-src-elem` / `-attr` beside it.
+      const scriptDirectives = csp
+        .split(';')
+        .map((d) => d.trim())
+        .filter((d) => d.startsWith('script-src'));
+      if (SCRIPTED_PAGES.includes(name)) {
+        expect(scriptDirectives, `${name}: the CSP must admit exactly 'self'`).toStrictEqual(["script-src 'self'"]);
+      } else {
+        expect(scriptDirectives.every((d) => d === "script-src 'self'" || d === "script-src 'none'"), name).toBe(true);
+        expect(scriptDirectives.length, name).toBeLessThanOrEqual(1);
+      }
     }
+    // Control: a second source is refused by the exact comparison.
+    expect(["script-src 'self' https://cdn.example"]).not.toStrictEqual(["script-src 'self'"]);
   });
 
   it('names this repository and this publisher, read from the manifest', () => {
@@ -347,38 +390,44 @@ describe('the page reaches nothing it should not', () => {
   });
 });
 
-describe('the page tells the truth about Codex', () => {
+/*
+ * Ruling of 2026-09-29: the redesigned index carries no Codex section, so the
+ * truth about Codex is asserted on the README, which carries the same
+ * statements (two of them added there word for word from the old page).
+ */
+describe('the README tells the truth about Codex', () => {
   it('keeps every engine:codex fence, opened and closed', () => {
     // DoD 5.9: 'Every engine:codex fence stays.' They are what makes the Codex
     // material identifiable as a block rather than as prose scattered through
-    // the page, which is what lets it be reviewed - or removed - as one thing.
-    const open = [...PAGE.matchAll(/<!-- engine:codex -->/g)].length;
-    const close = [...PAGE.matchAll(/<!-- \/engine:codex -->/g)].length;
+    // the document, which is what lets it be reviewed - or removed - as one thing.
+    const open = [...README.matchAll(/<!-- engine:codex -->/g)].length;
+    const close = [...README.matchAll(/<!-- \/engine:codex -->/g)].length;
 
     expect(open, 'the engine:codex fences have been removed').toBeGreaterThan(0);
     expect(close).toBe(open);
-    expect(open).toBe(2);
+    // The compatibility note, "Also observes Codex" and the Codex hook paste.
+    expect(open).toBe(3);
   });
 
   it('states the Codex anchor and window as the fingerprint defines them', () => {
     // G9 read off the code rather than transcribed. The anchor is a PROVENANCE
     // signal - it names the corpus that proved the structure - and it moves
-    // only by harvesting. A page that quoted a number would go stale silently
-    // at the next harvest; this one goes red.
-    expect(PAGE).toContain(PINNED_CODEX_VERSION);
+    // only by harvesting. A document that quoted a number would go stale
+    // silently at the next harvest; this one goes red.
+    expect(README).toContain(PINNED_CODEX_VERSION);
     expect(CODEX_VERSION_WINDOW.minor).toBe(1);
     // 'Patch and prerelease tags are not compared' is the half that is easy to
     // lose in an edit, and it is the half that stops a reader concluding the
     // extension pins one build.
-    expect(PAGE.toLowerCase()).toMatch(/patch and prerelease tags are not compared/);
+    expect(README.toLowerCase()).toMatch(/patch and prerelease tags are not compared/);
   });
 
   it('states the App Server boundary', () => {
     // G5's Codex clause, verbatim in substance: Codex ships an App Server and
-    // this product will never connect to it. A page describing an observability
-    // tool for an agent runtime, that does NOT say this, reads as an omission
-    // to exactly the reader who cares.
-    expect(PAGE).toMatch(/No App Server, no socket to Codex/i);
+    // this product will never connect to it. A document describing an
+    // observability tool for an agent runtime, that does NOT say this, reads as
+    // an omission to exactly the reader who cares.
+    expect(README).toMatch(/No App Server, no socket to Codex/i);
   });
 });
 
@@ -401,17 +450,20 @@ describe('the page does not ship inside the extension', () => {
 describe('v0.7.0 DoD 5.5 — the page names the Stats view, and no longer says nothing is kept', () => {
   it('carries ONE g10 region, the Stats section, which the forbidden-word scan reads', () => {
     // v0.7.1 DoD 6.D.1 moved the region from one line in "What it does" to the
-    // whole Stats section, which is what 0.7.0 and 0.7.1 add to the page. Still
-    // ONE region: the scanner reads the first pair of markers only.
-    const regions = [...PAGE.matchAll(/<!-- g10 -->([\s\S]*?)<!-- \/g10 -->/g)].map((m) => m[1] ?? '');
+    // whole Stats section. The ruling of 2026-09-29 moved it with the Stats
+    // section, off the redesigned page and onto the README. Still ONE region:
+    // the scanner reads the first pair of markers only.
+    const regions = [...README.matchAll(/<!-- g10 -->([\s\S]*?)<!-- \/g10 -->/g)].map((m) => m[1] ?? '');
     expect(regions).toHaveLength(1);
     expect(regions[0]).toContain('Stats view');
-    expect(/<section class="wrap" id="stats"><!-- g10 -->/.test(PAGE)).toBe(true);
+    expect(/\n## Stats\n\n<!-- g10 -->\n/.test(README)).toBe(true);
     // The region is the scan's subject: `scripts/forbidden-words.mjs` names this
-    // file and these markers, so moving the line out of them unscans it.
+    // file and these markers, so moving the text out of them unscans it.
     const scanner = readText('scripts/forbidden-words.mjs');
-    expect(scanner).toContain("join(REPO_ROOT, 'site', 'index.html')");
-    expect(scanner).toContain("start: '<!-- g10 -->'");
+    expect(scanner).toContain("file: join(REPO_ROOT, 'README.md'),\n    start: '<!-- g10 -->'");
+    // ...and, since the same ruling, both redesigned pages' whole visible text.
+    expect(scanner).toContain("{ kind: 'page', file: join(REPO_ROOT, 'site', 'index.html')");
+    expect(scanner).toContain("{ kind: 'page', file: join(REPO_ROOT, 'site', 'insights.html')");
   });
 
   it('no longer claims the product keeps nothing, which 0.7.0 made false', () => {
@@ -426,8 +478,9 @@ describe('v0.7.0 DoD 5.5 — the page names the Stats view, and no longer says n
 });
 
 // ---------------------------------------------------------------------------
-// v0.9.0 DoD 9.34 — the Insights subpage: one stylesheet, no external
-// resource, no script, AA contrast in both colour schemes
+// v0.9.0 DoD 9.34, retargeted to the redesigned pages by the ruling of
+// 2026-09-29: one stylesheet per page, no external resource, one same-origin
+// script, AA contrast in both colour schemes
 // ---------------------------------------------------------------------------
 
 /** A page's one `<style>` block. */
@@ -436,13 +489,77 @@ function styleOf(html: string): string {
   return at < 0 ? '' : html.slice(at, html.indexOf('</style>', at) + '</style>'.length);
 }
 
-/** `--name:value` pairs of the first rule block after `marker`. */
-function tokensAfter(css: string, marker: string): Record<string, string> {
-  const at = css.indexOf(marker);
-  if (at < 0) return {};
-  const open = css.indexOf('{', css.indexOf(':root', at));
-  const body = css.slice(open + 1, css.indexOf('}', open));
-  return Object.fromEntries([...body.matchAll(/--([a-z-]+):([^;]+);/g)].map((m) => [m[1] ?? '', (m[2] ?? '').trim()]));
+interface CssBlock {
+  /** The innermost at-rule the block sits in, or `null` at the top level. */
+  readonly media: string | null;
+  readonly selector: string;
+  readonly body: string;
+}
+
+/** Every rule block of a sheet, with the at-rule it sits in. Comments are dropped. */
+function cssBlocks(css: string): CssBlock[] {
+  const out: CssBlock[] = [];
+  const walk = (text: string, media: string | null): void => {
+    let i = 0;
+    while (i < text.length) {
+      const open = text.indexOf('{', i);
+      if (open < 0) break;
+      const head = text.slice(i, open).trim();
+      let depth = 1;
+      let j = open + 1;
+      while (j < text.length && depth > 0) {
+        if (text[j] === '{') depth += 1;
+        else if (text[j] === '}') depth -= 1;
+        j += 1;
+      }
+      const inner = text.slice(open + 1, j - 1);
+      if (head.startsWith('@')) walk(inner, head);
+      else out.push({ media, selector: head, body: inner });
+      i = j;
+    }
+  };
+  walk(css.replace(/^<style>/, '').replace(/<\/style>$/, '').replace(/\/\*[\s\S]*?\*\//g, ''), null);
+  return out;
+}
+
+function declarations(body: string): Record<string, string> {
+  return Object.fromEntries(
+    [...body.matchAll(/--([a-z0-9-]+):([^;]+)/g)].map((m) => [m[1] ?? '', (m[2] ?? '').trim()]),
+  );
+}
+
+interface Schemes {
+  readonly dark: Record<string, string>;
+  /** The light scheme as `prefers-color-scheme:light` sets it. */
+  readonly light: Record<string, string>;
+  /** The light scheme as `data-theme="light"` sets it. */
+  readonly lightAttr: Record<string, string>;
+  /** What the `prefers-color-scheme:light` blocks alone define. */
+  readonly lightOnly: Record<string, string>;
+}
+
+/**
+ * The custom properties of each scheme, in cascade order. The pages set the
+ * dark scheme on `:root`, and the light one twice — under the media query and
+ * under `[data-theme="light"]` — and the Insights accent (the violet held in
+ * the `--gold*` names) in later `:root:root:root` blocks, which is why every
+ * matching block is merged rather than the first one read.
+ */
+function schemesOf(css: string): Schemes {
+  const dark: Record<string, string> = {};
+  const lightOnly: Record<string, string> = {};
+  const attr: Record<string, string> = {};
+  for (const block of cssBlocks(css)) {
+    if (block.media === null && /^(?::root)+$/.test(block.selector)) Object.assign(dark, declarations(block.body));
+    else if (
+      block.media === '@media (prefers-color-scheme:light)' &&
+      /^(?::root)+:not\(\[data-theme="dark"\]\)$/.test(block.selector)
+    )
+      Object.assign(lightOnly, declarations(block.body));
+    else if (block.media === null && /^(?::root)+\[data-theme="light"\]$/.test(block.selector))
+      Object.assign(attr, declarations(block.body));
+  }
+  return { dark, light: { ...dark, ...lightOnly }, lightAttr: { ...dark, ...attr }, lightOnly };
 }
 
 type Rgba = [number, number, number, number];
@@ -455,6 +572,19 @@ function parseColour(value: string): Rgba {
   const rgba = /^rgba\((\d+),(\d+),(\d+),([\d.]+)\)$/.exec(value.replace(/\s+/g, ''));
   if (rgba) return [Number(rgba[1]), Number(rgba[2]), Number(rgba[3]), Number(rgba[4])];
   throw new Error(`not a colour: ${value}`);
+}
+/** A token's colour, following `var(--x)` references (`--accent` is `var(--blue)`). */
+function colourOf(tokens: Record<string, string>, name: string): Rgba {
+  let value = tokens[name] ?? '';
+  for (let hops = 0; hops < 5; hops += 1) {
+    const ref = /^var\(--([a-z0-9-]+)\)$/.exec(value);
+    if (ref === null) break;
+    value = tokens[ref[1] ?? ''] ?? '';
+  }
+  return parseColour(value);
+}
+function isColour(value: string): boolean {
+  return /^(#[0-9a-f]{6}|rgba\()/i.test(value);
 }
 /** `top` composited over an opaque `under`. */
 function over(top: Rgba, under: Rgba): Rgba {
@@ -473,186 +603,195 @@ function ratio(a: Rgba, b: Rgba): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-describe('v0.9.0 DoD 9.34 — the Insights subpage', () => {
-  const css = styleOf(PAGE);
-  const dark = tokensAfter(css, ':root{');
-  const light = { ...dark, ...tokensAfter(css, '@media (prefers-color-scheme:light)') };
+/** The opaque surfaces text sits on: the page, its two lifts, the raised panels' top, the footer floor. */
+function surfacesOf(tokens: Record<string, string>): [string, Rgba][] {
+  return (['bg', 'bg-2', 'bg-3', 'panel-top', 'deep'] as const).map((name) => [name, colourOf(tokens, name)]);
+}
 
-  it('carries the index page’s stylesheet byte for byte — one stylesheet, two pages', () => {
-    expect(css.length).toBeGreaterThan(1000);
-    expect(styleOf(INSIGHTS)).toBe(css);
-    expect(styleOf(THANKS)).toBe(css);
-    // And no page has a second one, inline or linked.
+/**
+ * The Insights teaser on the index, at its most violet point: the depth layer
+ * paints it `color-mix(in srgb, var(--gold) 16%, var(--bg-2))`, fading to
+ * `--bg-2`. That point is where its text has the least contrast.
+ */
+function teaserOf(tokens: Record<string, string>): Rgba {
+  const gold = colourOf(tokens, 'gold');
+  return over([gold[0], gold[1], gold[2], 0.16], colourOf(tokens, 'bg-2'));
+}
+
+/** The two redesigned pages, each held to the rules below against its own sheet. */
+const STYLED: Readonly<Record<string, string>> = { 'index.html': PAGE, 'insights.html': INSIGHTS };
+
+describe('v0.9.0 DoD 9.34 — the site pages’ stylesheets, scripts and contrast', () => {
+  it('each page carries exactly one stylesheet, and no inline style', () => {
+    // The byte-ties between pages (insights.html and thanks.html carrying the
+    // index's sheet) were retired by the ruling of 2026-09-29: the redesigned
+    // pages each carry their own. One sheet per page, inline, still holds.
     for (const [name, html] of Object.entries(PAGES)) {
+      expect(styleOf(html).length, name).toBeGreaterThan(1000);
       expect(html.split('<style').length - 1, name).toBe(1);
       expect(html, name).not.toMatch(/<link\b[^>]*stylesheet/i);
       expect(html, name).not.toMatch(/\sstyle="/);
     }
   });
 
-  it('loads nothing external: every src is a file under site/, and the sheet imports nothing', () => {
+  it('loads nothing external: every src is a file under site/, and no sheet imports anything', () => {
     // thanks.html carries no image, so the non-vacuity count is over the
-    // pages together, and it is the two image-carrying pages it counts.
+    // pages together.
     let total = 0;
     for (const [name, html] of Object.entries(PAGES)) {
       const srcs = [...html.matchAll(/\ssrc="([^"]+)"/g)].map((m) => m[1] ?? '');
       total += srcs.length;
       for (const src of srcs) expect(src, `${name}: ${src} is not a local file`).not.toMatch(/^(https?:)?\/\//);
       expect(html, name).not.toMatch(/<(link|iframe|object|embed|video|audio|source)\b/i);
+      expect(styleOf(html), name).not.toMatch(/@import|url\(/);
     }
     expect(total).toBeGreaterThan(0);
     expect(THANKS).not.toMatch(/\ssrc="/);
-    expect(css).not.toMatch(/@import|url\(/);
   });
 
-  it('runs no script at all — the CSP admits none and the pages carry none', () => {
+  it('runs one same-origin script on the pages that use it, and nothing inline', () => {
+    // Ruling of 2026-09-29: `site.js` (the view switcher and the copy button)
+    // is the one script, loaded `defer` from the page's own origin. No inline
+    // script, no `on…=` handler, no other script source, on any page.
     for (const [name, html] of Object.entries(PAGES)) {
-      expect(html, name).not.toMatch(/<script\b/i);
+      const tags = [...html.matchAll(/<script\b[^>]*>[\s\S]*?<\/script>/gi)].map((m) => m[0]);
+      expect(html.match(/<script\b/gi)?.length ?? 0, name).toBe(tags.length);
+      expect(tags, name).toStrictEqual(SCRIPTED_PAGES.includes(name) ? [SITE_SCRIPT_TAG] : []);
       expect(html, name).not.toMatch(/\son[a-z]+="/i);
     }
+    expect(SCRIPTED_PAGES.length).toBeGreaterThan(0);
+    // The script is tracked, and reaches nothing: no URL, no request API.
+    expect(TRACKED_SITE).toContain('site/site.js');
+    const script = readText('site/site.js');
+    expect(script.length).toBeGreaterThan(100);
+    expect(script).not.toMatch(/https?:|\/\/[a-z]/i);
+    expect(script).not.toMatch(/\b(fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|eval|Function|importScripts)\b|\bimport\s*\(/);
+    // Control: the request pattern does fire on a fetch.
+    expect(/\b(fetch|XMLHttpRequest)\b/.test('fetch("x")')).toBe(true);
   });
 
-  it('renders in both colour schemes: a light token set redefines every colour the dark one sets', () => {
-    const colours = Object.keys(dark).filter((k) => /^(#|rgba)/.test(dark[k] ?? ''));
-    expect(colours.length).toBeGreaterThan(15);
-    const lightOnly = tokensAfter(css, '@media (prefers-color-scheme:light)');
-    for (const key of colours) expect(lightOnly, `light scheme leaves --${key} dark`).toHaveProperty(key);
-    expect(css).toContain('color-scheme:dark light');
+  it('renders in both colour schemes: both light paths redefine every colour the dark one sets, identically', () => {
+    for (const [name, html] of Object.entries(STYLED)) {
+      const { dark, light, lightAttr, lightOnly } = schemesOf(styleOf(html));
+      const colours = Object.keys(dark).filter((k) => isColour(dark[k] ?? ''));
+      expect(colours.length, name).toBeGreaterThan(15);
+      for (const key of colours) {
+        expect(lightOnly, `${name}: the light scheme leaves --${key} dark`).toHaveProperty(key);
+        // The media query and `data-theme="light"` are two doors to ONE scheme.
+        expect(lightAttr[key], `${name}: --${key} differs between the two light paths`).toBe(light[key]);
+      }
+      // The single `color-scheme:dark light` declaration rule was retired by
+      // the ruling of 2026-09-29; each scheme states its own.
+      expect(styleOf(html), name).toContain('color-scheme:dark;');
+      expect(styleOf(html), name).toContain('color-scheme:light;');
+    }
   });
 
-  it('meets AA in both schemes, at the ratios the design system states', () => {
-    for (const [scheme, tokens] of [['dark', dark], ['light', light]] as const) {
-      const page = parseColour(tokens['bg-primary'] ?? '');
-      const panel = over(parseColour(tokens['bg-secondary'] ?? ''), page);
-      const card = over(parseColour(tokens['bg-card'] ?? ''), page);
-      const cardHover = over(parseColour(tokens['bg-card-hover'] ?? ''), page);
-      // Every token the sheet uses for TEXT, on every surface text sits on.
-      for (const ink of ['text-primary', 'text-secondary', 'blue-light', 'blue-bright', 'orange-light', 'green']) {
-        for (const [surface, ground] of [['page', page], ['panel', panel], ['card', card], ['card hover', cardHover]] as const) {
-          const r = ratio(parseColour(tokens[ink] ?? ''), ground);
-          expect(r, `${scheme}: --${ink} on ${surface} is ${r.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+  it('meets AA in both schemes: every text token on every surface, the teaser, and the solid button', () => {
+    for (const [name, html] of Object.entries(STYLED)) {
+      const css = styleOf(html);
+      const { dark, light } = schemesOf(css);
+      for (const [scheme, tokens] of [['dark', dark], ['light', light]] as const) {
+        // Every token the sheets use for TEXT, on every surface text sits on.
+        for (const ink of ['text', 'text-2', 'text-3', 'blue', 'blue-2', 'gold', 'gold-2']) {
+          for (const [surface, ground] of surfacesOf(tokens)) {
+            const r = ratio(colourOf(tokens, ink), ground);
+            expect(r, `${name} ${scheme}: --${ink} on --${surface} is ${r.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+          }
+        }
+        // The teaser's own text: its body copy, its heading, and the violet.
+        for (const ink of ['text', 'text-2', 'gold', 'gold-2']) {
+          const r = ratio(colourOf(tokens, ink), teaserOf(tokens));
+          expect(r, `${name} ${scheme}: --${ink} on the teaser is ${r.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+        }
+        // The solid button, READ FROM ITS RULES — at rest and on hover (the
+        // depth layer's gradient runs between the two fills).
+        for (const selector of ['.btn.solid', '.btn.solid:hover']) {
+          const rule = cssBlocks(css).find((b) => b.media === null && b.selector === selector);
+          expect(rule, `${name}: ${selector}`).toBeDefined();
+          const fill = /background:var\(--([a-z0-9-]+)\)/.exec(rule?.body ?? '')?.[1] ?? '';
+          const ink = /(?:^|;)color:var\(--([a-z0-9-]+)\)/.exec(rule?.body ?? '')?.[1] ?? '';
+          const r = ratio(colourOf(tokens, ink), colourOf(tokens, fill));
+          expect(r, `${name} ${scheme}: ${selector} --${ink} on --${fill} is ${r.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
         }
       }
-      // The primary button, READ FROM ITS RULES — at rest and on hover — so
-      // the check is about the tokens the button really uses, not a pair
-      // chosen here (mutation S10: the reference site's mid blue with light
-      // ink, 3.4:1, went red only through the identity test before).
-      for (const selector of ['.button.primary{', '.button.primary:hover{']) {
-        const at = css.indexOf(`  ${selector}`);
-        expect(at, selector).toBeGreaterThan(-1);
-        const rule = css.slice(at, css.indexOf('}', at));
-        const fill = /background:var\(--([a-z-]+)\)/.exec(rule)?.[1] ?? '';
-        const ink = /;color:var\(--([a-z-]+)\)/.exec(rule)?.[1] ?? '';
-        const r = ratio(parseColour(tokens[ink] ?? ''), parseColour(tokens[fill] ?? ''));
-        expect(r, `${scheme}: ${selector} --${ink} on --${fill} is ${r.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
-      }
     }
-    // The system's own stated ratios, re-derived, so the tokens are its values.
-    const stated = (tokens: Record<string, string>, ink: string, fill: string): number =>
-      Math.round(ratio(parseColour(tokens[ink] ?? ''), parseColour(tokens[fill] ?? '')) * 10) / 10;
-    expect(stated(dark, 'text-primary', 'bg-primary')).toBeCloseTo(14.8, 0);
-    expect(stated(dark, 'text-secondary', 'bg-primary')).toBeCloseTo(5.3, 0);
-    expect(stated(dark, 'text-inverse', 'blue-light')).toBeCloseTo(6.8, 0);
-    expect(stated(light, 'text-primary', 'bg-primary')).toBeCloseTo(13.7, 0);
-    expect(stated(light, 'text-secondary', 'bg-primary')).toBeCloseTo(6.6, 0);
-    expect(stated(light, 'blue-light', 'bg-primary')).toBeCloseTo(7.0, 0);
+  });
+
+  it('the ruling of 2026-09-29’s contrast fixes are the values the pages carry, at the ratios measured', () => {
+    // The pinned "stated ratios" of the old design system are replaced by the
+    // pairs ruling 1 changed: --text-3 in both schemes and --text-2 in dark,
+    // each the smallest OKLCH lightness shift on its own hue reaching 4.5:1.
+    for (const [name, html] of Object.entries(STYLED)) {
+      const { dark, light } = schemesOf(styleOf(html));
+      expect([dark['text-3'], light['text-3'], dark['text-2']], name).toStrictEqual(['#8993a9', '#5c6274', '#99a3b7']);
+      const on = (tokens: Record<string, string>, ink: string, ground: string): number =>
+        ratio(colourOf(tokens, ink), colourOf(tokens, ground));
+      const measured: [number, number][] = [
+        [on(dark, 'text-3', 'bg'), 5.45],
+        [on(dark, 'text-3', 'bg-2'), 5.08],
+        [on(dark, 'text-3', 'bg-3'), 4.63],
+        [on(dark, 'text-3', 'panel-top'), 4.51],
+        [on(dark, 'text-3', 'deep'), 5.93],
+        [on(light, 'text-3', 'bg'), 5.3],
+        [on(light, 'text-3', 'bg-2'), 4.93],
+        [on(light, 'text-3', 'bg-3'), 4.53],
+        [on(light, 'text-3', 'panel-top'), 5.73],
+        [on(light, 'text-3', 'deep'), 4.67],
+        [ratio(colourOf(dark, 'text-2'), teaserOf(dark)), 4.53],
+      ];
+      for (const [got, want] of measured) expect(got, name).toBeCloseTo(want, 2);
+    }
   });
 
   it('EVERY rule that sets a text colour meets AA on the ground it sits on, in both schemes', () => {
     /*
-     * Verifier round 9.39, D3: the test above checks a GRID of chosen pairs, so
-     * a rule re-coloured to a token outside the grid — the eyebrow at 3.95:1,
-     * `::selection` at 4.39:1 — stayed green. This reads the RULES: every
-     * `color:var(--x)` in the sheet, on the rule's own `background:var(--y)`
+     * Verifier round 9.39, D3: a GRID of chosen pairs lets a rule re-coloured to
+     * a token outside the grid stay green. This reads the RULES: every
+     * `color:var(--x)` in each sheet, on the rule's own `background:var(--y)`
      * when it sets one (composited over every surface it can sit on), and on
      * every surface otherwise.
      */
-    const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-      .map((m) => ({ selector: (m[1] ?? '').trim(), body: m[2] ?? '' }))
-      .filter((r) => /(^|;)color:var\(--/.test(r.body));
-    expect(rules.length, 'no rule sets a colour - the check would be vacuous').toBeGreaterThan(20);
-    const NON_TEXT = new Set(['li::marker']);
-    for (const selector of NON_TEXT) expect(rules.map((r) => r.selector)).toContain(selector);
     let pairs = 0;
-    for (const [scheme, tokens] of [['dark', dark], ['light', light]] as const) {
-      const page = parseColour(tokens['bg-primary'] ?? '');
-      const surfaces = [
-        page,
-        over(parseColour(tokens['bg-secondary'] ?? ''), page),
-        over(parseColour(tokens['bg-card'] ?? ''), page),
-        over(parseColour(tokens['bg-card-hover'] ?? ''), page),
-        over(parseColour(tokens['bg-header'] ?? ''), page),
-      ];
-      for (const rule of rules) {
-        const ink = /(?:^|;)color:var\(--([a-z-]+)\)/.exec(rule.body)?.[1] ?? '';
-        const fill = /background:var\(--([a-z-]+)\)/.exec(rule.body)?.[1];
-        // A decorative mark sets no text; the grey is refused separately below.
-        const grounds =
-          fill === undefined
-            ? surfaces
-            : surfaces.map((s) => over(parseColour(tokens[fill] ?? ''), s));
-        // A list MARKER is a graphic, not text: the system's accent-cool-mid is
-        // "4.4:1 UI/large" and names list markers as a use, and WCAG's
-        // non-text threshold is 3:1. Named here, by selector, so no text rule
-        // can borrow the lower bar.
-        const floor = NON_TEXT.has(rule.selector) ? 3 : 4.5;
-        for (const ground of grounds) {
-          const r = ratio(parseColour(tokens[ink] ?? ''), ground);
-          pairs += 1;
-          expect(r, `${scheme}: ${rule.selector} sets --${ink}${fill ? ` on --${fill}` : ''} at ${r.toFixed(2)}:1`).toBeGreaterThanOrEqual(floor);
+    for (const [name, html] of Object.entries(STYLED)) {
+      const css = styleOf(html);
+      const rules = cssBlocks(css).filter((r) => /(?:^|;)color:var\(--/.test(r.body));
+      expect(rules.length, `${name}: no rule sets a colour - the check would be vacuous`).toBeGreaterThan(20);
+      const { dark, light } = schemesOf(css);
+      for (const [scheme, tokens] of [['dark', dark], ['light', light]] as const) {
+        for (const rule of rules) {
+          const ink = /(?:^|;)color:var\(--([a-z0-9-]+)\)/.exec(rule.body)?.[1] ?? '';
+          const fill = /(?:^|;)background:var\(--([a-z0-9-]+)\)/.exec(rule.body)?.[1];
+          const grounds = surfacesOf(tokens).map(([, s]) => (fill === undefined ? s : over(colourOf(tokens, fill), s)));
+          for (const ground of grounds) {
+            const r = ratio(colourOf(tokens, ink), ground);
+            pairs += 1;
+            expect(r, `${name} ${scheme}: ${rule.selector} sets --${ink}${fill ? ` on --${fill}` : ''} at ${r.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+          }
         }
       }
     }
     expect(pairs).toBeGreaterThan(200);
   });
 
-  it('keeps the system’s shape rules: no drop shadow, the two radii, mono captions', () => {
-    // Verifier round 9.39, W3/W9: true today and untested. "No drop shadow,
-    // ever — depth is border + background lift only"; "radius-sm 4px, radius
-    // 8px, round 50% for status dots only; no larger radii"; captions in
-    // IBM Plex Mono .74rem.
-    const shadows = [...css.matchAll(/([^{}]+)\{[^{}]*box-shadow:([^;}]+)/g)].map((m) => (m[1] ?? '').trim());
-    // The one box-shadow is the brand dot's SPREAD ring (0 0 0 3px): a ring, not a shadow.
-    expect(shadows).toStrictEqual(['.mark']);
-    expect(css).toContain('box-shadow:0 0 0 3px var(--blue-soft)');
-    const radii = [...css.matchAll(/border-radius:([^;}]+)/g)].map((m) => (m[1] ?? '').trim());
-    expect(radii.length).toBeGreaterThan(8);
-    for (const value of radii) {
-      for (const part of value.split(/\s+/)) {
-        expect(['var(--radius)', 'var(--radius-sm)', '50%', '0'], `border-radius:${value}`).toContain(part);
-      }
-    }
-    expect(css).toContain('--radius:8px;--radius-sm:4px;');
-    const caption = /\n {2}figcaption\{([^}]*)\}/.exec(css)?.[1] ?? '';
-    expect(caption).toContain('font-family:var(--font-mono)');
-    expect(caption).toContain('font-size:.74rem');
-    expect(caption).toContain('letter-spacing:.04em');
-  });
+  // RETIRED by the ruling of 2026-09-29, for the site pages only: the old
+  // design system's shape rules — "no drop shadow, ever" (box-shadow is
+  // allowed on the site; the ban in the extension's webview stands), the
+  // 4px / 8px / 50% radii, and the mono .74rem figcaption.
 
   it('underlines a link on hover, so colour is never the only signal', () => {
-    // Verifier round 9.39, D5. The primary button's second signal is its
-    // arrow, which moves; every other link and button underlines.
-    expect(css).toMatch(/\n {2}a:hover\{[^}]*text-decoration:underline/);
-    expect(css).toMatch(/\.button:hover \.arrow\{transform:translateX\(4px\)\}/);
-    for (const [name, html] of Object.entries(PAGES)) {
-      for (const button of html.match(/<a class="button primary"[^>]*>[^]*?<\/a>/g) ?? []) {
-        expect(button, `${name}: a primary button without the arrow that moves`).toContain('<span class="arrow">→</span>');
-      }
+    // Verifier round 9.39, D5. The `.button:hover .arrow` half was retired by
+    // the ruling of 2026-09-29 with the old button markup.
+    for (const [name, html] of Object.entries(STYLED)) {
+      expect(styleOf(html), name).toMatch(/\n {2}a:hover\{[^}]*text-decoration:underline/);
     }
   });
 
-  it('the hero is one sentence of fact, and the four things it does are the amendment’s four', () => {
-    // W5/W6. The hero sentence and the "what it does" titles, pinned; the
-    // whole subpage's own words scanned for advice with the G10 list.
-    const hero = /<p class="intro">([^<]+)<\/p>/.exec(INSIGHTS)?.[1] ?? '';
-    expect(hero.split(/[.!?](\s|$)/).filter((s) => s.trim().length > 0)).toHaveLength(1);
-    const does = /<section class="wrap" id="does">[^]*?<div class="facts">([^]*?)<\/div>/.exec(INSIGHTS)?.[1] ?? '';
-    expect([...does.matchAll(/<h3>([^<]+)<\/h3>/g)].map((m) => m[1])).toStrictEqual([
-      'Sent on an explicit click',
-      'Evidence you can check',
-      'An offline licence key',
-      'No network call from the extension',
-    ]);
+  it('the Insights subpage’s own words carry no advice word from the G10 list', () => {
+    // W5/W6. The one-sentence hero rule, the four "what it does" titles and
+    // the two-captioned-figures rule were retired by the ruling of 2026-09-29;
+    // the word scan stays (and `scripts/forbidden-words.mjs` now scans both
+    // pages' whole visible text as well).
     const words = INSIGHTS.replace(/<style[^]*?<\/style>/, ' ').replace(/<[^>]+>/g, ' ');
     for (const banned of ['should', 'recommend', 'consider', 'try', 'improve', 'better', 'bad', 'good', 'waste']) {
       expect(new RegExp(`\\b${banned}\\b`, 'i').test(words), `insights.html says "${banned}"`).toBe(false);
@@ -661,29 +800,38 @@ describe('v0.9.0 DoD 9.34 — the Insights subpage', () => {
     expect(/\bshould\b/i.test('You should try it')).toBe(true);
   });
 
-  it('never sets TEXT in the decorative grey, which the system rules is not a text colour', () => {
-    // #3E4758 is 2.1:1 on the dark page; the reference site used it for
-    // captions, labels and comments, and the system demoted it.
-    expect(css).not.toMatch(/(^|[;{])\s*color:var\(--text-muted\)/m);
-    // Control: the scan finds the shape it is looking for.
-    expect(/(^|[;{])\s*color:var\(--text-muted\)/m.test('.x{color:var(--text-muted)}')).toBe(true);
+  // DELETED by the ruling of 2026-09-29: the "never sets TEXT in the decorative
+  // grey" check. The redesigned pages define no `--text-muted`, so it could no
+  // longer fail. RETIRED by the same ruling: the footer byte-ties (index to
+  // insights, index to thanks). The author-credit describe below reads both
+  // redesigned footers.
+});
+
+describe('ruling of 2026-09-29 — the author credit is in the footer, and nowhere else on a page', () => {
+  /*
+   * Everywhere else, only `src/about.ts` names the developer. The two
+   * redesigned pages carry the author credit in their <footer>, and that is
+   * the exemption: the name is read from `ABOUT_TEXT` rather than written here,
+   * so this file does not name anybody either.
+   */
+  const author = /Built by ([^,]+),/.exec(ABOUT_TEXT)?.[1] ?? '';
+  const footerOf = (html: string): string => /<footer\b[\s\S]*?<\/footer>/.exec(html)?.[0] ?? '';
+
+  it('reads a two-word name from the About text', () => {
+    expect(author.split(' ')).toHaveLength(2);
   });
 
-  it('the footer is the index page’s, byte for byte', () => {
-    const footer = (html: string): string => /<footer class="footer">[\s\S]*?<\/footer>/.exec(html)?.[0] ?? '';
-    expect(footer(PAGE).length).toBeGreaterThan(100);
-    expect(footer(INSIGHTS)).toBe(footer(PAGE));
-    expect(footer(THANKS)).toBe(footer(PAGE));
+  it.each(['index.html', 'insights.html'])('%s names the author in its footer only', (name) => {
+    const html = PAGES[name] ?? '';
+    expect(footerOf(html)).toContain(author);
+    const outside = html.replace(footerOf(html), '');
+    expect(outside.length).toBeGreaterThan(1000);
+    expect(outside.toLowerCase()).not.toContain(author.toLowerCase());
   });
 
-  it('every screenshot on the subpage carries a one-sentence caption', () => {
-    const figures = [...INSIGHTS.matchAll(/<figure>([\s\S]*?)<\/figure>/g)].map((m) => m[1] ?? '');
-    expect(figures).toHaveLength(2);
-    for (const figure of figures) {
-      const caption = /<figcaption>([^<]+)<\/figcaption>/.exec(figure)?.[1] ?? '';
-      expect(caption.length, 'a screenshot without its caption').toBeGreaterThan(20);
-      expect(caption.split(/[.!?](\s|$)/).filter((s) => s.trim().length > 0), caption).toHaveLength(1);
-    }
+  it('thanks.html and site.js do not name the author at all', () => {
+    expect(THANKS.toLowerCase()).not.toContain(author.toLowerCase());
+    expect(readText('site/site.js').toLowerCase()).not.toContain(author.toLowerCase());
   });
 });
 

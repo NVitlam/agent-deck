@@ -1049,6 +1049,13 @@ export class SessionModel {
   ): void {
     const record = this.record(sessionId, projectSlug);
     this.counts.contentArrivals += 1;
+    if (!result.ok && result.pending !== undefined) {
+      // A subagent pair still inside its window (ruling of 2026-09-29): not a
+      // refusal and not a tree. The session keeps what it had — its last
+      // whole graft, or a refusal it already carried — until the caller's
+      // re-check brings a result that is one or the other.
+      return;
+    }
     if (!result.ok) {
       this.refuse(record, { mismatch: result.mismatch });
       return;

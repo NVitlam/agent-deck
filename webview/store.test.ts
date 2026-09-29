@@ -232,6 +232,62 @@ describe('refusal', () => {
     store.handleMessage({ type: 'snapshot', sessions: [liveSession(), unsupportedSession()] });
     expect(store.getView().sessions[0]?.refused).toBe(false);
   });
+
+  /*
+   * 0.9.2, the ruling of 2026-09-29: a schemaMismatch is cleared by the next
+   * snapshot that states the session whole, not only by the session leaving.
+   * Before it, a session refused once for a subagent pair caught half written
+   * kept the refusal screen for the whole window while a good tree sat under
+   * it. The three tests below are that screen going away on its own, through
+   * each message the host can restate a session with, and the one case where
+   * it must NOT go away.
+   */
+  it('clears a mismatch when the next snapshot states the session whole', () => {
+    const store = createStore();
+    store.handleMessage({ type: 'snapshot', sessions: [unsupportedSession({ sessionId: 'session-live' })] });
+    store.handleMessage({ type: 'schemaMismatch', sessionId: 'session-live' });
+    expect(store.getView().refused).toBe(true);
+    // Never left the snapshot: the only way the old code could clear it.
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    expect(store.getView().refused).toBe(false);
+    expect(store.getView().sessions[0]?.refused).toBe(false);
+    expect(store.getView().sessions[0]?.nodeCount).toBe(7);
+  });
+
+  it('clears a mismatch when a diff restates the session whole', () => {
+    // The host's bridge sends a recovered session as a DIFF whenever it can,
+    // so a screen only a snapshot could clear would not go away on its own.
+    const store = createStore();
+    const refused = unsupportedSession({ sessionId: 'session-live' });
+    store.handleMessage({ type: 'snapshot', sessions: [refused] });
+    store.handleMessage({ type: 'schemaMismatch', sessionId: 'session-live' });
+    expect(store.getView().refused).toBe(true);
+    const patch = diffSessionState(refused, liveSession());
+    expect(patch).toBeDefined();
+    store.handleMessage({ type: 'diff', sessionId: 'session-live', patch: patch as SessionPatch });
+    expect(store.getView().patchFailure).toBeUndefined();
+    expect(store.getView().refused).toBe(false);
+  });
+
+  it('keeps a mismatch while the host still states the session refused', () => {
+    const store = createStore();
+    const refused = unsupportedSession({ sessionId: 'session-live' });
+    store.handleMessage({ type: 'snapshot', sessions: [refused] });
+    store.handleMessage({ type: 'schemaMismatch', sessionId: 'session-live' });
+    store.handleMessage({ type: 'snapshot', sessions: [refused] });
+    expect(store.getView().refused).toBe(true);
+    // schemaOk alone is not whole: liveness still unsupported.
+    store.handleMessage({
+      type: 'snapshot',
+      sessions: [unsupportedSession({ sessionId: 'session-live', schemaOk: true })],
+    });
+    expect(store.getView().refused).toBe(true);
+    // And a mismatch that arrives AFTER a whole snapshot still refuses: the
+    // clearing is on the restatement, never a standing exemption.
+    store.handleMessage({ type: 'snapshot', sessions: [liveSession()] });
+    store.handleMessage({ type: 'schemaMismatch', sessionId: 'session-live' });
+    expect(store.getView().refused).toBe(true);
+  });
 });
 
 describe('degraded', () => {
@@ -927,8 +983,9 @@ describe('a refused session reports nothing about its tree (G3)', () => {
   });
 
   it('restores both when the session stops being refused', () => {
-    // The mismatch set is dropped for a session that leaves the snapshot, so
-    // the numbers come back rather than latching at 0 for the window's life.
+    // The mismatch set is dropped for a session that leaves the snapshot (and,
+    // since 0.9.2, for one the next snapshot states whole), so the numbers come
+    // back rather than latching at 0 for the window's life.
     const store = createStore();
     store.handleMessage({ type: 'snapshot', sessions: [liveSession(), unsupportedSession()] });
     store.handleMessage({ type: 'schemaMismatch', sessionId: 'session-live' });

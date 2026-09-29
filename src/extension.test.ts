@@ -10557,3 +10557,121 @@ describe('DoD 7.6 — the four tweaks, the host half', () => {
     expect(settings().at(-1)?.livenessThresholdMs).toBe(900_000);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 0.9.2 — the sidecar race, through the real data path on the real clock
+// ---------------------------------------------------------------------------
+
+/*
+ * The ruling of 2026-09-29, end to end. `src/model/sidecar-race.test.ts` pins
+ * the boundary on an injected clock; this replays the race the user saw on a
+ * real watcher, real files and the real re-check timer: one subagent pair of a
+ * real 2.1.283 session caught half written, its second file landing 300 ms
+ * after the first.
+ *
+ * The transcript-first case is the one that needs the timer. A `.meta.json`
+ * landing appends no transcript line, so no watcher batch marks the session
+ * dirty again — before 0.9.2 a graft that looked inside the gap refused the
+ * session and nothing ever looked again.
+ */
+describe('a subagent pair caught half written is pending, never refused (0.9.2)', () => {
+  const SLUG_283 = 'c--Users-dev-projects-agent-deck';
+  const CORPUS_283 = fileURLToPath(
+    new URL(`../fixtures/cc-2.1.283/projects/${SLUG_283}`, import.meta.url),
+  );
+  const RACE_SESSION = 'd860ab28-db10-40dc-8775-ae00eeb21f23';
+  /** Its sidecar landed 372 ms after its transcript: the widest measured gap. */
+  const RACE_AGENT = 'a704ec1707a92b778';
+
+  function agentCount(node: TreeNode): number {
+    if (!isAgentNode(node)) return 0;
+    let n = 1;
+    for (const child of node.children) n += agentCount(child);
+    return n;
+  }
+
+  async function race(
+    withhold: 'meta' | 'transcript',
+    arriveAfterMs: number | null,
+  ): Promise<{ path: AgentDeckDataPath; emissions: DataPathEmission[] }> {
+    const projectsRoot = await makeTempDir();
+    const slugDir = join(projectsRoot, SLUG_283);
+    await cp(join(CORPUS_283, `${RACE_SESSION}.jsonl`), join(slugDir, `${RACE_SESSION}.jsonl`));
+    await cp(join(CORPUS_283, RACE_SESSION), join(slugDir, RACE_SESSION), { recursive: true });
+    const subagents = join(slugDir, RACE_SESSION, 'subagents');
+    const transcript = join(subagents, `agent-${RACE_AGENT}.jsonl`);
+    const meta = join(subagents, `agent-${RACE_AGENT}.meta.json`);
+    const withheld = withhold === 'meta' ? meta : transcript;
+    const present = withhold === 'meta' ? transcript : meta;
+    const bytes = await readFile(withheld);
+    await rm(withheld);
+    // The first file lands now, as it would live.
+    const landed = new Date();
+    await utimes(present, landed, landed);
+
+    const emissions: DataPathEmission[] = [];
+    const path = await startDataPathOnFreePort((port) => {
+      emissions.length = 0;
+      return trackDataPath(
+        new AgentDeckDataPath({
+          workspacePath: 'C:\\Users\\dev\\projects\\agent-deck',
+          projectsRoot,
+          settings: settings({ port }),
+          tickMs: 0,
+          onEmission: (payload) => {
+            emissions.push(payload);
+          },
+        }),
+      );
+    });
+    // The first graft of the session must have seen the gap, or this test
+    // measures nothing about it.
+    await waitFor(() => path.diagnostics.graftPending > 0, 'a pending graft', 10_000);
+    if (arriveAfterMs !== null) {
+      const wait = landed.getTime() + arriveAfterMs - Date.now();
+      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+      await writeFile(withheld, bytes);
+    }
+    return { path, emissions };
+  }
+
+  const sessionIn = (e: DataPathEmission): SessionState | undefined =>
+    e.emission.sessions.find((s) => s.sessionId === RACE_SESSION);
+
+  it.each([
+    { order: 'transcript first, sidecar 300 ms later', withhold: 'meta' as const },
+    { order: 'sidecar first, transcript 300 ms later', withhold: 'transcript' as const },
+  ])('$order: no refusal at any point, and the whole tree once both exist', async ({ withhold }) => {
+    const { path, emissions } = await race(withhold, 300);
+    await waitFor(
+      () => {
+        const last = emissions.at(-1);
+        const session = last === undefined ? undefined : sessionIn(last);
+        // Root plus 12 subagents.
+        return session !== undefined && agentCount(session.root) === 13;
+      },
+      'the whole tree',
+      10_000,
+    );
+    expect(path.diagnostics.graftRefusals).toBe(0);
+    expect(path.diagnostics.lastGraftRefusal).toBeUndefined();
+    expect(emissions.some((e) => e.emission.schemaMismatchSessionIds.includes(RACE_SESSION))).toBe(false);
+    for (const e of emissions) {
+      const session = sessionIn(e);
+      if (session !== undefined) expect(session.schemaOk).toBe(true);
+    }
+  }, 30_000);
+
+  it('a pair that never completes is refused on time, with the existing code, by the re-check alone', async () => {
+    const { path, emissions } = await race('meta', null);
+    await waitFor(() => path.diagnostics.graftRefusals > 0, 'the refusal', 10_000);
+    expect(path.diagnostics.lastGraftRefusal?.code).toBe('subagentMetaMissing');
+    await waitFor(
+      () => emissions.some((e) => e.emission.schemaMismatchSessionIds.includes(RACE_SESSION)),
+      'the schemaMismatch emission',
+      5_000,
+    );
+    const last = emissions.at(-1);
+    expect(last === undefined ? undefined : sessionIn(last)?.schemaOk).toBe(false);
+  }, 30_000);
+});

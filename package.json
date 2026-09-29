@@ -1,7 +1,7 @@
 {
   "name": "agent-deck",
   "displayName": "Agent Deck \u2014 Watch Your Agents Work.",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "publisher": "nvitlam",
   "description": "Live observability for coding-agent swarms \u2014 Claude Code, OpenCode and Codex, side by side in VS Code. Read-only, zero egress.",
   "sponsor": {

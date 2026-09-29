@@ -2,6 +2,19 @@
 
 All notable changes to Agent Deck are documented here.
 
+## 0.9.2 - 2026-09-29 - Subagents arriving half written
+
+### Fixed
+
+- A session no longer turns "unsupported" while one of its subagents is starting. Claude Code
+  writes a subagent as two files a few hundred milliseconds apart, in either order, and a look
+  between the two refused the whole session. Such a subagent is now waited for, for up to two
+  seconds after its first file lands, and the session keeps its tree meanwhile.
+- The "unsupported" screen now goes away on its own as soon as the session reads whole again,
+  instead of staying until the session left the deck.
+- Claude Code 2.1.283 sessions no longer report malformed lines: its new `cost-state` record is
+  recognised and skipped.
+
 ## 0.9.1 - 2026-09-28 - Marketplace badge
 
 ### Fixed

@@ -83,6 +83,15 @@ const CORPORA = [
    * `manual`); `99f96635` is the stall harvest from Phase 0c.
    */
   { version: '2.1.260', slugDir: fixture('cc-2.1.260', 'projects', SLUG), sessions: 2 },
+  /*
+   * 0.9.2. A witness too; the anchor does not move. Two sessions of one 4x2
+   * nested run, 24 sidecars — the run whose half-written subagent pairs
+   * refused the session before the ruling of 2026-09-29. It is the first
+   * corpus carrying `cost-state`, which is why `malformedLines === 0` below
+   * is a real assertion for it: before 0.9.2 those lines were malformed.
+   * `src/model/corpus-283.test.ts` owns its goldens and key pins.
+   */
+  { version: '2.1.283', slugDir: fixture('cc-2.1.283', 'projects', SLUG), sessions: 2 },
 ] as const;
 
 const SESSION_246 = '07e6c820-b285-4ea8-8127-98ea762291d9';
@@ -168,7 +177,7 @@ describe('every captured corpus parses through the production path', () => {
     }
   });
 
-  it('spans six CC releases, each of which the previous posture refused at some point', () => {
+  it('spans seven CC releases, each of which the previous posture refused at some point', () => {
     // Vacuity control on the list above: a corpus set that all sat inside the
     // OLD patch box would prove nothing about the change. 2.1.241 and 2.1.246
     // were both hard refusals until this phase, and 2.1.251 is five patches
@@ -178,7 +187,7 @@ describe('every captured corpus parses through the production path', () => {
     // The count is pinned BESIDE the set (rule 19's shape, applied to a corpus
     // list): a `CORPORA` accidentally filtered to nothing satisfies both
     // assertions above and neither of these.
-    expect(CORPORA).toHaveLength(6);
+    expect(CORPORA).toHaveLength(7);
     expect(CORPORA.map((c) => c.version)).toEqual([
       '2.1.234',
       '2.1.237',
@@ -186,6 +195,7 @@ describe('every captured corpus parses through the production path', () => {
       '2.1.246',
       '2.1.251',
       '2.1.260',
+      '2.1.283',
     ]);
   });
 

@@ -77,7 +77,7 @@ import type {
   UnresolvedAttribution,
 } from '../parser/attribution.js';
 import { attributeSubagents, loadSessionForAttribution } from '../parser/attribution.js';
-import type { FingerprintMismatch, FingerprintOptions } from '../parser/fingerprint.js';
+import type { FingerprintMismatch, FingerprintOptions, PairPending } from '../parser/fingerprint.js';
 import { fingerprintSession } from '../parser/fingerprint.js';
 import type { ParseOptions } from '../parser/parse.js';
 import { hydratePersistedOutputs } from '../parser/parse.js';
@@ -1555,7 +1555,16 @@ export interface GraftSessionOptions extends GraftOptions, FingerprintOptions {
  */
 export type GraftSessionResult =
   | { ok: true; snapshot: GraftSnapshot; diagnostics: ParseDiagnostics }
-  | { ok: false; mismatch: FingerprintMismatch; diagnostics: ParseDiagnostics };
+  | {
+      ok: false;
+      mismatch: FingerprintMismatch;
+      /**
+       * An incomplete subagent pair still inside the pending window: not a
+       * refusal yet. See the fingerprint's own `pending`. Still no tree.
+       */
+      pending?: PairPending;
+      diagnostics: ParseDiagnostics;
+    };
 
 /**
  * Fingerprint, read and graft one session, identified by its main transcript.
@@ -1570,9 +1579,15 @@ export async function graftSession(
 ): Promise<GraftSessionResult> {
   const fingerprintOptions: FingerprintOptions = {};
   if (options.pinnedVersion !== undefined) fingerprintOptions.pinnedVersion = options.pinnedVersion;
+  if (options.now !== undefined) fingerprintOptions.now = options.now;
   const fingerprinted = await fingerprintSession(mainTranscript, fingerprintOptions);
   if (!fingerprinted.ok) {
-    return { ok: false, mismatch: fingerprinted.mismatch, diagnostics: fingerprinted.diagnostics };
+    return {
+      ok: false,
+      mismatch: fingerprinted.mismatch,
+      ...(fingerprinted.pending === undefined ? {} : { pending: fingerprinted.pending }),
+      diagnostics: fingerprinted.diagnostics,
+    };
   }
 
   const fp = fingerprinted.value;

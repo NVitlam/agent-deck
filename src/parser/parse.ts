@@ -93,12 +93,29 @@ export const KNOWN_ENTRY_TYPES: ReadonlySet<string> = new Set([
  * **The structural fingerprint is untouched.** These types are not asserted
  * on, do not appear in `REQUIRED_ENTRY_FIELDS`, and refuse nothing. G3 is
  * unchanged: an entry with a type in neither set is still counted and skipped.
+ *
+ * **`cost-state` joined in 0.9.2**, observed first in `fixtures/cc-2.1.283/`:
+ * 3 lines across that corpus's two main transcripts, none in any subagent
+ * transcript, every one carrying exactly these keys:
+ *
+ *   type, sessionId, totalCostUSD, totalAPIDuration,
+ *   totalAPIDurationWithoutRetries, totalToolDuration, totalLinesAdded,
+ *   totalLinesRemoved, totalDuration, startTime, modelUsage,
+ *   hasUnknownModelCost
+ *
+ * Claude Code's own running cost for the session. It is NOT read: the deck's
+ * cost comes from the token counts it prices itself (and, where received, the
+ * telemetry cost), and a second figure from a record nobody has characterised
+ * would be a guess about which one to believe. Before this it was counted as
+ * malformed, which made every 2.1.283 session report broken lines it did not
+ * have. `src/model/corpus-283.test.ts` pins the key set.
  */
 export const IGNORED_ENTRY_TYPES: ReadonlySet<string> = new Set([
   'atis-latch',
   'mode',
   'file-history-delta',
   'system',
+  'cost-state',
 ]);
 
 /**

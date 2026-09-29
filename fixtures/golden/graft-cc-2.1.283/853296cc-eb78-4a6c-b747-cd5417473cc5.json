@@ -1,0 +1,1141 @@
+{
+  "sessionId": "853296cc-eb78-4a6c-b747-cd5417473cc5",
+  "projectSlug": "c--Users-dev-projects-agent-deck",
+  "epochAnchor": "2026-09-28T16:24:43.647Z",
+  "root": {
+    "node": "agent",
+    "id": "root",
+    "kind": "main",
+    "label": "Demo run screen recording",
+    "status": "running",
+    "spawnDepth": 0,
+    "contextNow": {
+      "prompt": 103815,
+      "output": 2846
+    },
+    "burn": {
+      "prompt": 103815,
+      "output": 2846
+    },
+    "usageSeries": [
+      {
+        "ordinal": 0,
+        "input": 2,
+        "cacheCreation": 73276,
+        "cacheRead": 30537,
+        "output": 2846,
+        "atMs": 1790612692319
+      }
+    ],
+    "model": "claude-opus-5-5",
+    "compactions": null,
+    "startedAtOffsetMs": 0,
+    "endedAtOffsetMs": null,
+    "children": [
+      {
+        "node": "tool",
+        "id": "toolu_01NCKJSyxtmCxhKPFfNNC3Dm",
+        "toolName": "Agent",
+        "status": "error",
+        "inputPreview": "sha256:185de4744bdf6bb2:566",
+        "resultPreview": "sha256:8621ef054998d150:225",
+        "durationMs": 50352,
+        "filePath": null,
+        "inputHash": "f0117f54dea03f40960255075d82fe37a597c3f66b978cf4c8768057bfbf9544",
+        "ordinal": 0
+      },
+      {
+        "node": "agent",
+        "id": "a8a288e237d18394a",
+        "kind": "subagent",
+        "label": "general-purpose: Lead: strings",
+        "status": "error",
+        "spawnDepth": 1,
+        "contextNow": {
+          "prompt": 96750,
+          "output": 16
+        },
+        "burn": {
+          "prompt": 190535,
+          "output": 32
+        },
+        "usageSeries": [
+          {
+            "ordinal": 0,
+            "input": 2,
+            "cacheCreation": 70483,
+            "cacheRead": 23300,
+            "output": 16,
+            "atMs": 1790612711120
+          },
+          {
+            "ordinal": 1,
+            "input": 2,
+            "cacheCreation": 2965,
+            "cacheRead": 93783,
+            "output": 16,
+            "atMs": 1790612719482
+          }
+        ],
+        "model": "claude-opus-5-5",
+        "compactions": null,
+        "startedAtOffsetMs": 24160,
+        "endedAtOffsetMs": 62385,
+        "children": [
+          {
+            "node": "tool",
+            "id": "toolu_01T4BDN7LsPAu8Bteko3GZBG",
+            "toolName": "Bash",
+            "status": "done",
+            "inputPreview": "sha256:02d0dd315df76150:163",
+            "resultPreview": "sha256:09c8189aaef6e1b6:47",
+            "durationMs": 5687,
+            "filePath": null,
+            "inputHash": "02d0dd315df76150d1fa11be1dbc0b35185d47cd7ae9749d462162d295ced762",
+            "ordinal": 0
+          },
+          {
+            "node": "tool",
+            "id": "toolu_019ezHBzXBy8EPEsUAgkvowV",
+            "toolName": "Agent",
+            "status": "error",
+            "inputPreview": "sha256:0ffbd4fd5cd4418f:433",
+            "resultPreview": "sha256:8621ef054998d150:225",
+            "durationMs": 26535,
+            "filePath": null,
+            "inputHash": "7e4d1ad961b5c1b9737632f10ea988d4fe7801a892ee264827922f99ff0b2a01",
+            "ordinal": 1
+          },
+          {
+            "node": "agent",
+            "id": "a6d54f08869ed1d31",
+            "kind": "subagent",
+            "label": "general-purpose: Build: palindrome",
+            "status": "error",
+            "spawnDepth": 2,
+            "contextNow": {
+              "prompt": 96914,
+              "output": 16
+            },
+            "burn": {
+              "prompt": 190408,
+              "output": 455
+            },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 2,
+                "cacheCreation": 70192,
+                "cacheRead": 23300,
+                "output": 439,
+                "atMs": 1790612727761
+              },
+              {
+                "ordinal": 1,
+                "input": 2,
+                "cacheCreation": 3420,
+                "cacheRead": 93492,
+                "output": 16,
+                "atMs": 1790612738091
+              }
+            ],
+            "model": "claude-opus-5-5",
+            "compactions": null,
+            "startedAtOffsetMs": 39124,
+            "endedAtOffsetMs": 62370,
+            "children": [
+              {
+                "node": "tool",
+                "id": "toolu_01FPfZeYtBxEdFKGmcLLmigR",
+                "toolName": "Write",
+                "status": "done",
+                "inputPreview": "sha256:103eae75d766abf6:293",
+                "resultPreview": "sha256:f393a93a69fa6802:167",
+                "durationMs": 3517,
+                "filePath": "sha256:a2ea6b565b6ccf29:59",
+                "inputHash": "b6a0648a75f91355137b0eeefaf7220f8797bd1f546355a038fa176a943c7403",
+                "ordinal": 0
+              },
+              {
+                "node": "tool",
+                "id": "toolu_01XfXFFh5FbDcUKJ4VRocXXo",
+                "toolName": "Write",
+                "status": "done",
+                "inputPreview": "sha256:a8b102df0e7fee0a:438",
+                "resultPreview": "sha256:4f833c80104b2a13:172",
+                "durationMs": 6447,
+                "filePath": "sha256:80bdccb4d05c6e8e:64",
+                "inputHash": "37162a94ea005f7481c05b97bc1d5ca389465da63c420420e3f3409d86942278",
+                "ordinal": 1
+              },
+              {
+                "node": "tool",
+                "id": "toolu_014MtgrowtF2KgTTdzLBFUAE",
+                "toolName": "Bash",
+                "status": "done",
+                "inputPreview": "sha256:1a505be667210b4b:141",
+                "resultPreview": "sha256:004ad136a23907dd:34",
+                "durationMs": 5852,
+                "filePath": null,
+                "inputHash": "1a505be667210b4bf11797c9fe4c0100cb15b0444000575252d01f01afc5b292",
+                "ordinal": 2
+              }
+            ]
+          },
+          {
+            "node": "tool",
+            "id": "toolu_017bKLkTE8t3PqDB8Gin3g6V",
+            "toolName": "Agent",
+            "status": "error",
+            "inputPreview": "sha256:0c77900bbfcedb7e:451",
+            "resultPreview": "sha256:8621ef054998d150:225",
+            "durationMs": 25040,
+            "filePath": null,
+            "inputHash": "e222a8f4a50919b74beaa867268c287e3937fe1aac9e38a760ce8104b47636d9",
+            "ordinal": 2
+          },
+          {
+            "node": "agent",
+            "id": "a1f135da3f6900f6b",
+            "kind": "subagent",
+            "label": "general-purpose: Build: caesar-cipher",
+            "status": "error",
+            "spawnDepth": 2,
+            "contextNow": {
+              "prompt": 97017,
+              "output": 16
+            },
+            "burn": {
+              "prompt": 190526,
+              "output": 537
+            },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 2,
+                "cacheCreation": 70207,
+                "cacheRead": 23300,
+                "output": 521,
+                "atMs": 1790612728748
+              },
+              {
+                "ordinal": 1,
+                "input": 2,
+                "cacheCreation": 3508,
+                "cacheRead": 93507,
+                "output": 16,
+                "atMs": 1790612739506
+              }
+            ],
+            "model": "claude-opus-5-5",
+            "compactions": null,
+            "startedAtOffsetMs": 39134,
+            "endedAtOffsetMs": 62518,
+            "children": [
+              {
+                "node": "tool",
+                "id": "toolu_019rvwZ4vaNfkTyCp9YCxYK9",
+                "toolName": "Write",
+                "status": "done",
+                "inputPreview": "sha256:c3460d5a7c2a51f0:389",
+                "resultPreview": "sha256:a45b795d5ce54a0d:170",
+                "durationMs": 3932,
+                "filePath": "sha256:6c53444884e2847b:62",
+                "inputHash": "9c453aa0570443582a3800b9cc68c9058522700331c12bef60468033be4e4209",
+                "ordinal": 0
+              },
+              {
+                "node": "tool",
+                "id": "toolu_01T6SD5GakQenoxhJC1KfQMJ",
+                "toolName": "Write",
+                "status": "done",
+                "inputPreview": "sha256:088be71059e8d5ed:438",
+                "resultPreview": "sha256:c2f992e06b39ff71:175",
+                "durationMs": 5806,
+                "filePath": "sha256:f02c84af041f8913:67",
+                "inputHash": "50f66258ec866051cdf26fab22ddcf69c124323b0b266c9ab41be0f5fb779ab6",
+                "ordinal": 1
+              },
+              {
+                "node": "tool",
+                "id": "toolu_01L9MSBcaH3hNZDLbfQD1USU",
+                "toolName": "Bash",
+                "status": "done",
+                "inputPreview": "sha256:7b08314c98f3dddc:151",
+                "resultPreview": "sha256:e80e6a8eaeb384d9:41",
+                "durationMs": 5451,
+                "filePath": null,
+                "inputHash": "7b08314c98f3dddc45fb3105707b104cc10667b8e0788755aa51b149afeea056",
+                "ordinal": 2
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "node": "tool",
+        "id": "toolu_01JLRmioGRExsYhMGoUf7JH9",
+        "toolName": "Agent",
+        "status": "error",
+        "inputPreview": "sha256:ffc3b162d40f3155:566",
+        "resultPreview": "sha256:8621ef054998d150:225",
+        "durationMs": 46964,
+        "filePath": null,
+        "inputHash": "cccd42d7507d61633518551eee99e2ccce7f6c440934e371e3c488059e32fe24",
+        "ordinal": 1
+      },
+      {
+        "node": "agent",
+        "id": "ac2f9d12bf70dc7ab",
+        "kind": "subagent",
+        "label": "general-purpose: Lead: numbers",
+        "status": "error",
+        "spawnDepth": 1,
+        "contextNow": {
+          "prompt": 96765,
+          "output": 16
+        },
+        "burn": {
+          "prompt": 190557,
+          "output": 40
+        },
+        "usageSeries": [
+          {
+            "ordinal": 0,
+            "input": 2,
+            "cacheCreation": 70490,
+            "cacheRead": 23300,
+            "output": 24,
+            "atMs": 1790612711515
+          },
+          {
+            "ordinal": 1,
+            "input": 2,
+            "cacheCreation": 2973,
+            "cacheRead": 93790,
+            "output": 16,
+            "atMs": 1790612718348
+          }
+        ],
+        "model": "claude-opus-5-5",
+        "compactions": null,
+        "startedAtOffsetMs": 24172,
+        "endedAtOffsetMs": 62612,
+        "children": [
+          {
+            "node": "tool",
+            "id": "toolu_01L5kpUZrxd8GzRq1sQgJVi4",
+            "toolName": "PowerShell",
+            "status": "done",
+            "inputPreview": "sha256:19ad4fdbe62a404f:226",
+            "resultPreview": "sha256:3cbc87c7681f34db:4",
+            "durationMs": 3249,
+            "filePath": null,
+            "inputHash": "19ad4fdbe62a404ffb2692f68c0b20f0bd3b70e7914e9cf8f87258a2f39c0e6c",
+            "ordinal": 0
+          },
+          {
+            "node": "tool",
+            "id": "toolu_01KeQSerfpUih4k7JVkjaU1X",
+            "toolName": "Agent",
+            "status": "error",
+            "inputPreview": "sha256:2b92e1f145f6e3ec:565",
+            "resultPreview": "sha256:8621ef054998d150:225",
+            "durationMs": 27907,
+            "filePath": null,
+            "inputHash": "b23623bbaf3c1c191d674d605c66511e55b20084d2f0838f1173dd4ed0fb9c12",
+            "ordinal": 1
+          },
+          {
+            "node": "agent",
+            "id": "a0d4de2ee7f575911",
+            "kind": "subagent",
+            "label": "general-purpose: Build: fizzbuzz",
+            "status": "error",
+            "spawnDepth": 2,
+            "contextNow": {
+              "prompt": 97016,
+              "output": 24
+            },
+            "burn": {
+              "prompt": 190582,
+              "output": 485
+            },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 2,
+                "cacheCreation": 70264,
+                "cacheRead": 23300,
+                "output": 461,
+                "atMs": 1790612725693
+              },
+              {
+                "ordinal": 1,
+                "input": 2,
+                "cacheCreation": 3450,
+                "cacheRead": 93564,
+                "output": 24,
+                "atMs": 1790612735354
+              }
+            ],
+            "model": "claude-opus-5-5",
+            "compactions": null,
+            "startedAtOffsetMs": 38541,
+            "endedAtOffsetMs": 62608,
+            "children": [
+              {
+                "node": "tool",
+                "id": "toolu_01RsAXcyqATPqdPNGbZxahzQ",
+                "toolName": "Write",
+                "status": "done",
+                "inputPreview": "sha256:51645017f1e11c18:285",
+                "resultPreview": "sha256:cee7290d9cb7f01b:165",
+                "durationMs": 3165,
+                "filePath": "sha256:fb36399e59bbb91d:57",
+                "inputHash": "fd7c535f246cebcecddebc03ee73addb4c0c3a2ee56a74c698be8a3a1ad54bd7",
+                "ordinal": 0
+              },
+              {
+                "node": "tool",
+                "id": "toolu_01G1HwQRa6QeBubwqjXUNvfF",
+                "toolName": "Write",
+                "status": "done",
+                "inputPreview": "sha256:e9381b888179b95c:359",
+                "resultPreview": "sha256:ac4e27d78c6318f2:170",
+                "durationMs": 5584,
+                "filePath": "sha256:fa53f81862eec345:62",
+                "inputHash": "f0a927bfad373172f56234cbcb94a562ab1efd4a87bf5436f8f7b58168642fa7",
+                "ordinal": 1
+              },
+              {
+                "node": "tool",
+                "id": "toolu_01QUSFqizfCVc9AM2PgDMZKD",
+                "toolName": "PowerShell",
+                "status": "error",
+                "inputPreview": "sha256:c41148304fb40b1a:117",
+                "resultPreview": "sha256:8621ef054998d150:225",
+                "durationMs": 10899,
+                "filePath": null,
+                "inputHash": "c41148304fb40b1acb91065e7c46a4e018f9b59f5f99d93c74009d5f373c1188",
+                "ordinal": 2
+              }
+            ]
+          },
+          {
+            "node": "tool",
+            "id": "toolu_01RWqrkJbuxMb6KSzuFEbcJn",
+            "toolName": "Agent",
+            "status": "error",
+            "inputPreview": "sha256:b73ee32f2f89ae3d:565",
+            "resultPreview": "sha256:8621ef054998d150:225",
+            "durationMs": 26088,
+            "filePath": null,
+            "inputHash": "b6e0f006e97ff60d3b3cc7b91eb50d18518b049bb1d65c3ecc8c9b99abd638c1",
+            "ordinal": 2
+          },
+          {
+            "node": "agent",
+            "id": "afffa701914f90777",
+            "kind": "subagent",
+            "label": "general-purpose: Build: prime-sieve",
+            "status": "error",
+            "spawnDepth": 2,
+            "contextNow": {
+              "prompt": 97309,
+              "output": 24
+            },
+            "burn": {
+              "prompt": 287993,
+              "output": 615
+            },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 2,
+                "cacheCreation": 70259,
+                "cacheRead": 23300,
+                "output": 575,
+                "atMs": 1790612726407
+              },
+              {
+                "ordinal": 1,
+                "input": 2,
+                "cacheCreation": 3562,
+                "cacheRead": 93559,
+                "output": 16,
+                "atMs": 1790612736349
+              },
+              {
+                "ordinal": 2,
+                "input": 2,
+                "cacheCreation": 186,
+                "cacheRead": 97121,
+                "output": 24,
+                "atMs": 1790612744128
+              }
+            ],
+            "model": "claude-opus-5-5",
+            "compactions": null,
+            "startedAtOffsetMs": 38546,
+            "endedAtOffsetMs": 62728,
+            "children": [
+              {
+                "node": "tool",
+                "id": "toolu_01Hm9CMD5DpiiW5mencRpVHu",
+                "toolName": "Write",
+                "status": "done",
+                "inputPreview": "sha256:2e5711e86f456c3f:565",
+                "resultPreview": "sha256:4f135c4a26bba828:168",
+                "durationMs": 3453,
+                "filePath": "sha256:12f5e66088d06eac:60",
+                "inputHash": "4d8c27655325fb3fc8315d0e3394f26704a763f548a0a2a5e7d8765d31589a62",
+                "ordinal": 0
+              },
+              {
+                "node": "tool",
+                "id": "toolu_01TaH6V1hbAa2BoM6YkpwtXf",
+                "toolName": "Write",
+                "status": "done",
+                "inputPreview": "sha256:b7d7f49015d49318:409",
+                "resultPreview": "sha256:a6054ff1054e187e:173",
+                "durationMs": 6026,
+                "filePath": "sha256:d114456d879d7d37:65",
+                "inputHash": "809e11fa81b74fb70bd18d5e519bdb7d2a4e3c384d81ab781ee649b84f3e70b4",
+                "ordinal": 1
+              },
+              {
+                "node": "tool",
+                "id": "toolu_01FqFYmgBzantNxDjxiBWkZM",
+                "toolName": "Bash",
+                "status": "done",
+                "inputPreview": "sha256:1d6db0ee51f26505:155",
+                "resultPreview": "sha256:67a80cee852b21e1:35",
+                "durationMs": 6125,
+                "filePath": null,
+                "inputHash": "1d6db0ee51f2650526b0a2938e18e1aaeae8de0156605404ec2c9c78aeda5459",
+                "ordinal": 2
+              },
+              {
+                "node": "tool",
+                "id": "toolu_01AwviBgU39vyy6q1MAdC8rB",
+                "toolName": "SubagentHandback",
+                "status": "error",
+                "inputPreview": "sha256:402aa8193cd4e986:31",
+                "resultPreview": "sha256:8621ef054998d150:225",
+                "durationMs": 2244,
+                "filePath": null,
+                "inputHash": "402aa8193cd4e986605163b9bc7f683ed996364aae54c4f3b4378012ca082afa",
+                "ordinal": 3
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "node": "tool",
+        "id": "toolu_0161UNVXufZYGpiLT5ZfGnbt",
+        "toolName": "Agent",
+        "status": "error",
+        "inputPreview": "sha256:6bc0a48f4ee9a6a6:566",
+        "resultPreview": "sha256:8621ef054998d150:225",
+        "durationMs": 43575,
+        "filePath": null,
+        "inputHash": "176e88e7f3b19e526721d838bed6f0867ca072850d5005d70f7a1530d1ec0114",
+        "ordinal": 2
+      },
+      {
+        "node": "agent",
+        "id": "a488e566e2e363909",
+        "kind": "subagent",
+        "label": "general-purpose: Lead: converters",
+        "status": "error",
+        "spawnDepth": 1,
+        "contextNow": {
+          "prompt": 96721,
+          "output": 16
+        },
+        "burn": {
+          "prompt": 190508,
+          "output": 40
+        },
+        "usageSeries": [
+          {
+            "ordinal": 0,
+            "input": 2,
+            "cacheCreation": 70485,
+            "cacheRead": 23300,
+            "output": 24,
+            "atMs": 1790612711858
+          },
+          {
+            "ordinal": 1,
+            "input": 2,
+            "cacheCreation": 2934,
+            "cacheRead": 93785,
+            "output": 16,
+            "atMs": 1790612718080
+          }
+        ],
+        "model": "claude-opus-5-5",
+        "compactions": null,
+        "startedAtOffsetMs": 24183,
+        "endedAtOffsetMs": 62560,
+        "children": [
+          {
+            "node": "tool",
+            "id": "toolu_01LVFA76PTkQz3fHg9AA39k6",
+            "toolName": "PowerShell",
+            "status": "done",
+            "inputPreview": "sha256:c2c4105ed7e77303:173",
+            "resultPreview": "sha256:2689367b205c16ce:2",
+            "durationMs": 3421,
+            "filePath": null,
+            "inputHash": "c2c4105ed7e773030f014fdd652fe8918450c4774474745dccddda4b033a32cd",
+            "ordinal": 0
+          },
+          {
+            "node": "tool",
+            "id": "toolu_01X54TFKem1G6SuZzHkeUaFA",
+            "toolName": "Agent",
+            "status": "error",
+            "inputPreview": "sha256:a6a5957dd8d7c6e2:466",
+            "resultPreview": "sha256:8621ef054998d150:225",
+            "durationMs": 28270,
+            "filePath": null,
+            "inputHash": "ac3277f975467f7e95554df775c67471d6f31a149dc9518924b6857ca28774ac",
+            "ordinal": 1
+          },
+          {
+            "node": "agent",
+            "id": "ada940b2ab62e62ee",
+            "kind": "subagent",
+            "label": "general-purpose: Build: roman-numerals",
+            "status": "error",
+            "spawnDepth": 2,
+            "contextNow": {
+              "prompt": 97117,
+              "output": 20
+            },
+            "burn": {
+              "prompt": 190621,
+              "output": 648
+            },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 2,
+                "cacheCreation": 70202,
+                "cacheRead": 23300,
+                "output": 628,
+                "atMs": 1790612725364
+              },
+              {
+                "ordinal": 1,
+                "input": 2,
+                "cacheCreation": 3613,
+                "cacheRead": 93502,
+                "output": 20,
+                "atMs": 1790612735492
+              }
+            ],
+            "model": "claude-opus-5-5",
+            "compactions": null,
+            "startedAtOffsetMs": 37250,
+            "endedAtOffsetMs": 62703,
+            "children": [
+              {
+                "node": "tool",
+                "id": "toolu_01A1x23oaQz4E3SYvuGkrYt1",
+                "toolName": "Write",
+                "status": "done",
+                "inputPreview": "sha256:ced5d5c79d5af8a4:565",
+                "resultPreview": "sha256:fe1298d3dfe95a76:174",
+                "durationMs": 3114,
+                "filePath": "sha256:ee6afdc67c941881:66",
+                "inputHash": "65895eafacce8eb5b8dd745464f4b0552b44f4763eb4f861a84fc85f61d48a3b",
+                "ordinal": 0
+              },
+              {
+                "node": "tool",
+                "id": "toolu_01D7dVXwVHge8c3szdYfy9x5",
+                "toolName": "Write",
+                "status": "done",
+                "inputPreview": "sha256:0e1407e7d5c4d7ce:402",
+                "resultPreview": "sha256:f3a3a69106bc7b47:179",
+                "durationMs": 5459,
+                "filePath": "sha256:6bca12350b2d7218:71",
+                "inputHash": "2208cfb03407ee67aaa70d11a0ef24ab54ab852953aa1a8ec6ca1ec13b89dd29",
+                "ordinal": 1
+              },
+              {
+                "node": "tool",
+                "id": "toolu_015EfmMs8HqP7BSrTDBaDiCb",
+                "toolName": "PowerShell",
+                "status": "done",
+                "inputPreview": "sha256:f11415b9fa1a08e4:127",
+                "resultPreview": "sha256:646d5135fceabaca:38",
+                "durationMs": 10363,
+                "filePath": null,
+                "inputHash": "f11415b9fa1a08e4bbe8aca888fa9bcdb79ead1dadd8170a4268f282a2aec6d5",
+                "ordinal": 2
+              }
+            ]
+          },
+          {
+            "node": "tool",
+            "id": "toolu_01RUzYycLJzWJnu2Pyb6avMq",
+            "toolName": "Agent",
+            "status": "error",
+            "inputPreview": "sha256:db01b104d73003ff:496",
+            "resultPreview": "sha256:8621ef054998d150:225",
+            "durationMs": 26540,
+            "filePath": null,
+            "inputHash": "c16eaf8ed2c16b78b060bd64294e69b245353d8141e8279c9ec9346e8378b539",
+            "ordinal": 2
+          },
+          {
+            "node": "agent",
+            "id": "ac5bafc4ca64e3507",
+            "kind": "subagent",
+            "label": "general-purpose: Build: temperature-convert",
+            "status": "error",
+            "spawnDepth": 2,
+            "contextNow": {
+              "prompt": 96905,
+              "output": 24
+            },
+            "burn": {
+              "prompt": 190409,
+              "output": 440
+            },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 2,
+                "cacheCreation": 70202,
+                "cacheRead": 23300,
+                "output": 416,
+                "atMs": 1790612723952
+              },
+              {
+                "ordinal": 1,
+                "input": 2,
+                "cacheCreation": 3401,
+                "cacheRead": 93502,
+                "output": 24,
+                "atMs": 1790612733801
+              }
+            ],
+            "model": "claude-opus-5-5",
+            "compactions": null,
+            "startedAtOffsetMs": 37255,
+            "endedAtOffsetMs": 62558,
+            "children": [
+              {
+                "node": "tool",
+                "id": "toolu_01VMCnoae4FRwFykzg4PCS1e",
+                "toolName": "Write",
+                "status": "done",
+                "inputPreview": "sha256:8a45fa1f64df34a2:218",
+                "resultPreview": "sha256:8ae4b52e66f153b3:179",
+                "durationMs": 3610,
+                "filePath": "sha256:7cbf54d3f85ecdff:71",
+                "inputHash": "affe51a63579543ca60823447bbfa3ac8135ac871db7ebbca9f89a8796d81d4b",
+                "ordinal": 0
+              },
+              {
+                "node": "tool",
+                "id": "toolu_01WJvAPfdtWRYmg5stcxZ1BB",
+                "toolName": "Write",
+                "status": "done",
+                "inputPreview": "sha256:e62d02b450b87170:433",
+                "resultPreview": "sha256:cb827b2e168eac37:184",
+                "durationMs": 5506,
+                "filePath": "sha256:bf62015fec91512f:76",
+                "inputHash": "56c410588e401f0a9d77a2144de2f416aa3241b320aff3ba2ffcd3bcc6c30b89",
+                "ordinal": 1
+              },
+              {
+                "node": "tool",
+                "id": "toolu_01UqfhLfaZwBhrfntRteGmUP",
+                "toolName": "PowerShell",
+                "status": "error",
+                "inputPreview": "sha256:d4e2b8834c802b96:139",
+                "resultPreview": "sha256:8621ef054998d150:225",
+                "durationMs": 12402,
+                "filePath": null,
+                "inputHash": "d4e2b8834c802b964a313ad8df74b8dc73b928a9c88ab26e4eca453e7dfdca18",
+                "ordinal": 2
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "node": "tool",
+        "id": "toolu_01X6T6W26ADXBXVe5Qa8fXk7",
+        "toolName": "Agent",
+        "status": "error",
+        "inputPreview": "sha256:d3bbdb4851acf933:566",
+        "resultPreview": "sha256:8621ef054998d150:225",
+        "durationMs": 40099,
+        "filePath": null,
+        "inputHash": "e3ea42b3d6929504de1f7974125133013666b400a28bebcf364e6e4fac140268",
+        "ordinal": 3
+      },
+      {
+        "node": "agent",
+        "id": "a66be967c3f4680a0",
+        "kind": "subagent",
+        "label": "general-purpose: Lead: puzzles",
+        "status": "error",
+        "spawnDepth": 1,
+        "contextNow": {
+          "prompt": 96727,
+          "output": 16
+        },
+        "burn": {
+          "prompt": 190516,
+          "output": 36
+        },
+        "usageSeries": [
+          {
+            "ordinal": 0,
+            "input": 2,
+            "cacheCreation": 70487,
+            "cacheRead": 23300,
+            "output": 20,
+            "atMs": 1790612711507
+          },
+          {
+            "ordinal": 1,
+            "input": 2,
+            "cacheCreation": 2938,
+            "cacheRead": 93787,
+            "output": 16,
+            "atMs": 1790612718074
+          }
+        ],
+        "model": "claude-opus-5-5",
+        "compactions": null,
+        "startedAtOffsetMs": 24190,
+        "endedAtOffsetMs": 62380,
+        "children": [
+          {
+            "node": "tool",
+            "id": "toolu_01M4fzAtSzMFyUzmbk1XJahG",
+            "toolName": "PowerShell",
+            "status": "done",
+            "inputPreview": "sha256:9f614ccafb42eda1:167",
+            "resultPreview": "sha256:2689367b205c16ce:2",
+            "durationMs": 3162,
+            "filePath": null,
+            "inputHash": "9f614ccafb42eda190f8e2c32f1db8c6baac64742d28a7fd83bf1bd02b0f84b9",
+            "ordinal": 0
+          },
+          {
+            "node": "tool",
+            "id": "toolu_01Qgiqyg7tRwcUbDWMwPXwmc",
+            "toolName": "Agent",
+            "status": "error",
+            "inputPreview": "sha256:644678e83f534ed4:565",
+            "resultPreview": "sha256:8621ef054998d150:225",
+            "durationMs": 28111,
+            "filePath": null,
+            "inputHash": "08afdf9880ae769bc97e1086dda12de3467c23c5ccd4872647f96eb9bd7a8a71",
+            "ordinal": 1
+          },
+          {
+            "node": "agent",
+            "id": "a7a760dbdabfc8522",
+            "kind": "subagent",
+            "label": "general-purpose: Build: balanced-brackets",
+            "status": "error",
+            "spawnDepth": 2,
+            "contextNow": {
+              "prompt": 97081,
+              "output": 24
+            },
+            "burn": {
+              "prompt": 190650,
+              "output": 545
+            },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 2,
+                "cacheCreation": 70267,
+                "cacheRead": 23300,
+                "output": 521,
+                "atMs": 1790612725279
+              },
+              {
+                "ordinal": 1,
+                "input": 2,
+                "cacheCreation": 3512,
+                "cacheRead": 93567,
+                "output": 24,
+                "atMs": 1790612735603
+              }
+            ],
+            "model": "claude-opus-5-5",
+            "compactions": null,
+            "startedAtOffsetMs": 37781,
+            "endedAtOffsetMs": 62538,
+            "children": [
+              {
+                "node": "tool",
+                "id": "toolu_01UgcG1ooZR2roTrCy62Luct",
+                "toolName": "Write",
+                "status": "done",
+                "inputPreview": "sha256:a881e40d656549b4:473",
+                "resultPreview": "sha256:0478292c265655e7:174",
+                "durationMs": 4145,
+                "filePath": "sha256:26f587c09faaa373:66",
+                "inputHash": "20cf72cb80fac18ac586eed7e9275937cf7e5795917e819c75f4d4757a58d73a",
+                "ordinal": 0
+              },
+              {
+                "node": "tool",
+                "id": "toolu_01NyL96YAJ5Y7kgSao4HziV6",
+                "toolName": "Write",
+                "status": "done",
+                "inputPreview": "sha256:c92ead8cca246a78:428",
+                "resultPreview": "sha256:cc1bd4b9289c61b3:179",
+                "durationMs": 5810,
+                "filePath": "sha256:fe5a1379d8de2140:71",
+                "inputHash": "471281327c14d1c049009073a104175fa3ac45455e0fecaf27a4922b733746e6",
+                "ordinal": 1
+              },
+              {
+                "node": "tool",
+                "id": "toolu_011qZKfguqJRZLRJ8MeYhR1N",
+                "toolName": "PowerShell",
+                "status": "done",
+                "inputPreview": "sha256:16a81af16667824f:130",
+                "resultPreview": "sha256:1c6d41274021b481:45",
+                "durationMs": 9811,
+                "filePath": null,
+                "inputHash": "16a81af16667824ff3bbb9a66feb2a721745990cd5824002cbbf597b56fa0172",
+                "ordinal": 2
+              }
+            ]
+          },
+          {
+            "node": "tool",
+            "id": "toolu_01CMXAmvSe4SkxFFE9C6U6iv",
+            "toolName": "Agent",
+            "status": "error",
+            "inputPreview": "sha256:7b9c7d36728412d7:565",
+            "resultPreview": "sha256:8621ef054998d150:225",
+            "durationMs": 26083,
+            "filePath": null,
+            "inputHash": "55c40a0d8c4ae59d89ce4d7cb4a4d870b2da58154f3d53869e5461a6b7f70b52",
+            "ordinal": 2
+          },
+          {
+            "node": "agent",
+            "id": "a3155c43740cc606e",
+            "kind": "subagent",
+            "label": "general-purpose: Build: anagram",
+            "status": "error",
+            "spawnDepth": 2,
+            "contextNow": {
+              "prompt": 97150,
+              "output": 24
+            },
+            "burn": {
+              "prompt": 287675,
+              "output": 484
+            },
+            "usageSeries": [
+              {
+                "ordinal": 0,
+                "input": 2,
+                "cacheCreation": 70247,
+                "cacheRead": 23300,
+                "output": 444,
+                "atMs": 1790612725158
+              },
+              {
+                "ordinal": 1,
+                "input": 2,
+                "cacheCreation": 3427,
+                "cacheRead": 93547,
+                "output": 16,
+                "atMs": 1790612733825
+              },
+              {
+                "ordinal": 2,
+                "input": 2,
+                "cacheCreation": 174,
+                "cacheRead": 96974,
+                "output": 24,
+                "atMs": 1790612745079
+              }
+            ],
+            "model": "claude-opus-5-5",
+            "compactions": null,
+            "startedAtOffsetMs": 37789,
+            "endedAtOffsetMs": 62331,
+            "children": [
+              {
+                "node": "tool",
+                "id": "toolu_01NessDk19YRFLyhHoBBrf3N",
+                "toolName": "Write",
+                "status": "done",
+                "inputPreview": "sha256:0a2bd7c427f2bc53:308",
+                "resultPreview": "sha256:c2f697954ff8bc0a:164",
+                "durationMs": 3216,
+                "filePath": "sha256:9cfd8df54c89ca3d:56",
+                "inputHash": "4fac1724087ca9b659474be25c7d4a302ca54a10a549fcd3ee483b9d138cb5ad",
+                "ordinal": 0
+              },
+              {
+                "node": "tool",
+                "id": "toolu_01JBtVvNMpu5FnvzAgvhkKRe",
+                "toolName": "Write",
+                "status": "done",
+                "inputPreview": "sha256:63a388cf59c89f22:411",
+                "resultPreview": "sha256:d3148364edf2bdb1:169",
+                "durationMs": 5064,
+                "filePath": "sha256:440f6b10b88f4d00:61",
+                "inputHash": "0c7e62f30c142ccd2d0b36e24133d2428c8c27490f017d2fcc0575b1a3fa6a3c",
+                "ordinal": 1
+              },
+              {
+                "node": "tool",
+                "id": "toolu_01VBMrKh9gEtkaTJEfEhoXiv",
+                "toolName": "Bash",
+                "status": "done",
+                "inputPreview": "sha256:d01d2bea2c2e3004:140",
+                "resultPreview": "sha256:4b2416ea07e30120:31",
+                "durationMs": 8142,
+                "filePath": null,
+                "inputHash": "d01d2bea2c2e3004647c6f44fe01aaf9d9a5d213d6a3259332867ac5011b9523",
+                "ordinal": 2
+              },
+              {
+                "node": "tool",
+                "id": "toolu_017Jp9EKTzURzGViZsecvVV5",
+                "toolName": "SubagentHandback",
+                "status": "error",
+                "inputPreview": "sha256:a8b7341f99fc19f2:388",
+                "resultPreview": "sha256:8621ef054998d150:225",
+                "durationMs": 891,
+                "filePath": null,
+                "inputHash": "a8b7341f99fc19f273de9623a46d61f70950ce1d5d7cff6dfb5eed080ae8d63b",
+                "ordinal": 3
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "parked": [],
+  "edges": [
+    {
+      "toolUseId": "toolu_01KeQSerfpUih4k7JVkjaU1X",
+      "agentId": "a0d4de2ee7f575911",
+      "parentNodeId": "ac2f9d12bf70dc7ab",
+      "depth": 2,
+      "recordedDepth": 2
+    },
+    {
+      "toolUseId": "toolu_017bKLkTE8t3PqDB8Gin3g6V",
+      "agentId": "a1f135da3f6900f6b",
+      "parentNodeId": "a8a288e237d18394a",
+      "depth": 2,
+      "recordedDepth": 2
+    },
+    {
+      "toolUseId": "toolu_01CMXAmvSe4SkxFFE9C6U6iv",
+      "agentId": "a3155c43740cc606e",
+      "parentNodeId": "a66be967c3f4680a0",
+      "depth": 2,
+      "recordedDepth": 2
+    },
+    {
+      "toolUseId": "toolu_0161UNVXufZYGpiLT5ZfGnbt",
+      "agentId": "a488e566e2e363909",
+      "parentNodeId": "root",
+      "depth": 1,
+      "recordedDepth": 1
+    },
+    {
+      "toolUseId": "toolu_01X6T6W26ADXBXVe5Qa8fXk7",
+      "agentId": "a66be967c3f4680a0",
+      "parentNodeId": "root",
+      "depth": 1,
+      "recordedDepth": 1
+    },
+    {
+      "toolUseId": "toolu_019ezHBzXBy8EPEsUAgkvowV",
+      "agentId": "a6d54f08869ed1d31",
+      "parentNodeId": "a8a288e237d18394a",
+      "depth": 2,
+      "recordedDepth": 2
+    },
+    {
+      "toolUseId": "toolu_01Qgiqyg7tRwcUbDWMwPXwmc",
+      "agentId": "a7a760dbdabfc8522",
+      "parentNodeId": "a66be967c3f4680a0",
+      "depth": 2,
+      "recordedDepth": 2
+    },
+    {
+      "toolUseId": "toolu_01NCKJSyxtmCxhKPFfNNC3Dm",
+      "agentId": "a8a288e237d18394a",
+      "parentNodeId": "root",
+      "depth": 1,
+      "recordedDepth": 1
+    },
+    {
+      "toolUseId": "toolu_01JLRmioGRExsYhMGoUf7JH9",
+      "agentId": "ac2f9d12bf70dc7ab",
+      "parentNodeId": "root",
+      "depth": 1,
+      "recordedDepth": 1
+    },
+    {
+      "toolUseId": "toolu_01RUzYycLJzWJnu2Pyb6avMq",
+      "agentId": "ac5bafc4ca64e3507",
+      "parentNodeId": "a488e566e2e363909",
+      "depth": 2,
+      "recordedDepth": 2
+    },
+    {
+      "toolUseId": "toolu_01X54TFKem1G6SuZzHkeUaFA",
+      "agentId": "ada940b2ab62e62ee",
+      "parentNodeId": "a488e566e2e363909",
+      "depth": 2,
+      "recordedDepth": 2
+    },
+    {
+      "toolUseId": "toolu_01RWqrkJbuxMb6KSzuFEbcJn",
+      "agentId": "afffa701914f90777",
+      "parentNodeId": "ac2f9d12bf70dc7ab",
+      "depth": 2,
+      "recordedDepth": 2
+    }
+  ],
+  "totals": {
+    "costUsd": 0
+  },
+  "contextNow": {
+    "prompt": 103815,
+    "output": 2846
+  },
+  "burn": {
+    "prompt": 2584795,
+    "output": 7203
+  },
+  "counts": {
+    "grafted": 12,
+    "parked": 0,
+    "toolNodes": 42
+  },
+  "depthMismatches": []
+}

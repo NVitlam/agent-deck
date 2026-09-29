@@ -321,7 +321,51 @@ export interface SessionFingerprint {
  */
 export type FingerprintResult =
   | { ok: true; value: SessionFingerprint; diagnostics: ParseDiagnostics }
-  | { ok: false; mismatch: FingerprintMismatch; diagnostics: ParseDiagnostics };
+  | {
+      ok: false;
+      mismatch: FingerprintMismatch;
+      /**
+       * Set when the only thing wrong is a subagent pair that is still inside
+       * {@link PAIR_PENDING_WINDOW_MS}: not a refusal yet, a "look again".
+       * `mismatch` is then the refusal the pair becomes if it is still
+       * incomplete at `deadlineMs`, so a consumer that does not know this field
+       * refuses — the behaviour before 0.9.2, and the safe direction.
+       */
+      pending?: PairPending;
+      diagnostics: ParseDiagnostics;
+    };
+
+/**
+ * An incomplete subagent pair that is too young to refuse (ruling of
+ * 2026-09-29): a transcript without its `.meta.json`, or the reverse.
+ */
+export interface PairPending {
+  /** The incomplete pairs, sorted. Every one is inside the window. */
+  agentIds: string[];
+  /**
+   * Epoch ms: the latest `mtime + PAIR_PENDING_WINDOW_MS` across those pairs.
+   * A re-check at or after this instant that still finds a pair incomplete
+   * refuses with the existing code.
+   */
+  deadlineMs: number;
+}
+
+/**
+ * How long an incomplete subagent pair is "pending" rather than refused,
+ * measured from the mtime of the file that exists. The ruling of 2026-09-29.
+ *
+ * Claude Code writes `agent-<id>.jsonl` and `agent-<id>.meta.json` as two
+ * separate files, in EITHER order. Measured on CC 2.1.283 across the 24 pairs
+ * of one 4x2 nested run: the transcript came first in 17 (the sidecar up to
+ * 372 ms later), the sidecar first in 6 (up to 77 ms), 1 tie. CC 2.1.234 had
+ * the sidecar first, 80-120 ms, 5 of 5. The watcher's debounce is 120 ms, so a
+ * graft landing inside the gap is the common case, not a rare one, and before
+ * this it refused the whole session. 2,000 ms is over five times the largest
+ * measured gap and still short enough that a pair which never completes is
+ * refused while the session is on screen. `agent-deck-spec.md` carries the
+ * same reasoning.
+ */
+export const PAIR_PENDING_WINDOW_MS = 2_000;
 
 /** Compile-time proof that {@link FingerprintResult} satisfies the model type. */
 export type FingerprintResultIsParseResult =
@@ -355,6 +399,12 @@ export interface FingerprintOptions {
    * production has one anchor.
    */
   pinnedVersion?: string;
+  /**
+   * The clock an incomplete pair's age is measured on, against file mtimes.
+   * Defaults to `Date.now`; tests inject one to reach both sides of
+   * {@link PAIR_PENDING_WINDOW_MS} without sleeping.
+   */
+  now?: () => number;
 }
 
 // ---------------------------------------------------------------------------
@@ -1070,33 +1120,57 @@ export async function fingerprintSession(
     ignored.push(join(subagentsDir, entry.name));
   }
 
+  // An incomplete pair is PENDING while the file that exists is younger than
+  // PAIR_PENDING_WINDOW_MS, and refused with the existing code once it is not
+  // (ruling of 2026-09-29). Pending pairs are skipped rather than returned at
+  // once, so a real refusal on a complete pair still wins over a "look again".
+  const now = options.now ?? Date.now;
+  const pendingIds: string[] = [];
+  let pendingDeadline = 0;
+  let pendingMismatch: FingerprintMismatch | undefined;
+  const pairAge = async (present: string): Promise<{ young: boolean; deadline: number }> => {
+    const at = now();
+    let mtimeMs: number;
+    try {
+      mtimeMs = (await stat(join(subagentsDir, present))).mtimeMs;
+    } catch {
+      // Gone between readdir and stat: a transient, and the next graft sees
+      // the directory as it then is. Measured from now, so it is young.
+      mtimeMs = at;
+    }
+    const deadline = mtimeMs + PAIR_PENDING_WINDOW_MS;
+    return { young: at < deadline, deadline };
+  };
+
   const agentIds = [...new Set([...transcripts.keys(), ...metas.keys()])].sort();
   for (const agentId of agentIds) {
     const transcriptName = transcripts.get(agentId);
     const metaName = metas.get(agentId);
-    if (transcriptName === undefined) {
-      return refuse(
-        mismatch('subagentTranscriptMissing', 'sidecar has no matching transcript', {
-          path: join(subagentsDir, `agent-${agentId}.jsonl`),
-          field: agentId,
-          expected: `agent-${agentId}.jsonl`,
-          actual: 'absent',
-        }),
-      );
-    }
-    if (metaName === undefined) {
-      return refuse(
-        mismatch(
-          'subagentMetaMissing',
-          'transcript has no matching sidecar; the join key for attribution is unavailable',
-          {
-            path: join(subagentsDir, `agent-${agentId}.meta.json`),
-            field: agentId,
-            expected: `agent-${agentId}.meta.json`,
-            actual: 'absent',
-          },
-        ),
-      );
+    if (transcriptName === undefined || metaName === undefined) {
+      const refusal =
+        transcriptName === undefined
+          ? mismatch('subagentTranscriptMissing', 'sidecar has no matching transcript', {
+              path: join(subagentsDir, `agent-${agentId}.jsonl`),
+              field: agentId,
+              expected: `agent-${agentId}.jsonl`,
+              actual: 'absent',
+            })
+          : mismatch(
+              'subagentMetaMissing',
+              'transcript has no matching sidecar; the join key for attribution is unavailable',
+              {
+                path: join(subagentsDir, `agent-${agentId}.meta.json`),
+                field: agentId,
+                expected: `agent-${agentId}.meta.json`,
+                actual: 'absent',
+              },
+            );
+      const age = await pairAge(transcriptName ?? metaName ?? '');
+      if (!age.young) return refuse(refusal);
+      pendingIds.push(agentId);
+      pendingDeadline = Math.max(pendingDeadline, age.deadline);
+      pendingMismatch ??= refusal;
+      continue;
     }
 
     const metaPath = join(subagentsDir, metaName);
@@ -1128,6 +1202,16 @@ export async function fingerprintSession(
   // about which IN-WINDOW version they were written by — a CC self-update
   // landing mid-session, which is the case Phase 4 exists to accept. The set
   // of versions is reported on the fingerprint instead of being refused.
+  if (pendingMismatch !== undefined) {
+    // No tree: a session with a half-written pair is not partially accepted
+    // (G3). The caller keeps what it had and looks again.
+    return {
+      ok: false,
+      mismatch: pendingMismatch,
+      pending: { agentIds: pendingIds, deadlineMs: pendingDeadline },
+      diagnostics,
+    };
+  }
   return accept();
 }
 

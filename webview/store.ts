@@ -1292,6 +1292,20 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
     !state.schemaOk || state.liveness === 'unsupported' || mismatched.has(state.sessionId);
 
   /**
+   * A `schemaMismatch` lasts until the host next states the session whole
+   * (ruling of 2026-09-29). Before 0.9.2 it lasted until the session LEFT the
+   * snapshot, so a session refused once — for a subagent pair caught half
+   * written — kept its refusal screen for the rest of the window while the
+   * host was sending a good tree underneath it. Called for a snapshot's
+   * sessions and for a diff's result: the host restates a recovered session as
+   * a diff far more often than as a snapshot, and a screen that only a
+   * snapshot can clear does not go away on its own.
+   */
+  const clearMismatchIfWhole = (state: SessionState): void => {
+    if (state.schemaOk && state.liveness !== 'unsupported') mismatched.delete(state.sessionId);
+  };
+
+  /**
    * Run the fit, if the setting is on and the renderer has ever measured.
    *
    * Writes `canvasView` and bumps the epoch, which is how the renderer knows
@@ -1399,6 +1413,7 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
       sessions.set(state.sessionId, state);
       nextOrder.push(state.sessionId);
       seen.add(state.sessionId);
+      clearMismatchIfWhole(state);
     }
     order = nextOrder;
 
@@ -1655,6 +1670,7 @@ export function createStore(postIntent: IntentSink = () => {}, options: StoreOpt
               onError: (e) => errors.push(e),
             });
             sessions.set(message.sessionId, next);
+            clearMismatchIfWhole(next);
           } catch (error: unknown) {
             // Still reachable: a patch that would break the "root is an agent
             // node" invariant is a producer bug, not divergence, and `apply.ts`

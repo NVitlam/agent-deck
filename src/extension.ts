@@ -314,6 +314,15 @@ export const LIVENESS_TICK_MS = 5_000;
 export const EMIT_COALESCE_MS = 100;
 
 /**
+ * How often a session whose graft came back PENDING is re-grafted while its
+ * subagent pair is inside the fingerprint's `PAIR_PENDING_WINDOW_MS`. A quarter second is
+ * about two watcher debounces: the tree completes soon after the second file
+ * lands, and a pending session costs at most eight extra grafts before it is
+ * either whole or refused.
+ */
+export const PAIR_RECHECK_MS = 250;
+
+/**
  * 90 days. CONFIRMED rather than chosen, by measurement.
  *
  * `docs/evidence/phase-0-stats/VERDICT.md` 0.7 serialised a record per
@@ -2389,6 +2398,12 @@ export interface DataPathDiagnostics {
   grafts: number;
   /** Of those, ones that returned `ok: false` (a G3 refusal, not a throw). */
   graftRefusals: number;
+  /**
+   * Of those, ones that came back PENDING: a subagent pair inside its window
+   * (ruling of 2026-09-29). Not counted in {@link graftRefusals} — nothing was
+   * refused — and each one arms a re-check.
+   */
+  graftPending: number;
   /** `graftSession` threw outright. Should stay 0; counted so it cannot crash. */
   graftErrors: number;
   lastGraftError?: string;
@@ -2590,6 +2605,10 @@ export class AgentDeckDataPath {
   #emissions = 0;
   #grafts = 0;
   #graftRefusals = 0;
+  #graftPending = 0;
+  /** Sessions whose last graft came back pending, awaiting a re-check. */
+  readonly #pendingSessions = new Set<string>();
+  #pendingTimer: TimerHandle | null = null;
   /** Latest per-session parse levels. Keyed by session id. */
   readonly #parseLevels = new Map<string, { malformed: number; ignored: number }>();
   #graftErrors = 0;
@@ -2772,12 +2791,14 @@ export class AgentDeckDataPath {
       emissions: this.#emissions,
       grafts: this.#grafts,
       graftRefusals: this.#graftRefusals,
+      graftPending: this.#graftPending,
       graftErrors: this.#graftErrors,
       consumerErrors: this.#consumerErrors,
       timersArmed:
         (this.#emitTimer === null ? 0 : 1) +
         (this.#tickTimer === null ? 0 : 1) +
-        (this.#lateTimer === null ? 0 : 1),
+        (this.#lateTimer === null ? 0 : 1) +
+        (this.#pendingTimer === null ? 0 : 1),
       ccEnabled: this.#ccEnabled,
       hookBindAttempted: this.#hookBindAttempted,
       ccLateEnabled: this.#ccLateEnabled,
@@ -3119,6 +3140,11 @@ export class AgentDeckDataPath {
     this.#unsubscribeLate?.();
     this.#unsubscribeLate = null;
     this.#dirty.clear();
+    if (this.#pendingTimer !== null) {
+      this.#scheduler.clearTimer(this.#pendingTimer);
+      this.#pendingTimer = null;
+    }
+    this.#pendingSessions.clear();
     // First, and unconditionally: the OpenCode poll trigger and WAL watch, and
     // the Codex poll triggers, must not outlive the host even if a Claude Code
     // teardown below rejects.
@@ -3304,6 +3330,7 @@ export class AgentDeckDataPath {
       if (!known.has(sessionId)) {
         this.model.forgetSession(sessionId);
         this.#dirty.delete(sessionId);
+        this.#pendingSessions.delete(sessionId);
         // The level goes with the session. Leaving it behind would keep
         // counting malformed lines in a transcript nobody is watching.
         this.#parseLevels.delete(sessionId);
@@ -3369,7 +3396,20 @@ export class AgentDeckDataPath {
         previewBytes: this.settings.previewBytes,
       });
       if (this.#disposed) return;
-      if (!result.ok) {
+      if (!result.ok && result.pending !== undefined) {
+        // An incomplete subagent pair inside its window (ruling of
+        // 2026-09-29). Not a refusal: no event, no refusal count, and the
+        // model keeps what the session had. The re-check below is what makes
+        // "the graft waits" true — the file that completes the pair need not
+        // append a single transcript line, so no watcher batch may ever mark
+        // this session dirty again.
+        this.#graftPending += 1;
+        this.#pendingSessions.add(sessionId);
+        this.#armPendingRecheck(result.pending.deadlineMs);
+      } else {
+        this.#pendingSessions.delete(sessionId);
+      }
+      if (!result.ok && result.pending === undefined) {
         this.#graftRefusals += 1;
         /*
          * F2 — THE REASON, NOT JUST THE COUNT.
@@ -3428,6 +3468,27 @@ export class AgentDeckDataPath {
         reason: `graft failed: ${this.#lastGraftError}`,
       });
     }
+  }
+
+  /**
+   * Re-graft every pending session: every {@link PAIR_RECHECK_MS} while the
+   * window is open, and once more just past its deadline, so a pair that never
+   * completes is refused on time rather than on the next unrelated batch.
+   *
+   * One timer for all pending sessions, never longer than PAIR_RECHECK_MS, so
+   * no deadline can be overslept by more than that.
+   */
+  #armPendingRecheck(deadlineMs: number): void {
+    if (this.#disposed) return;
+    const untilDeadline = Math.max(0, deadlineMs - Date.now()) + 1;
+    if (this.#pendingTimer !== null) return;
+    const delay = Math.min(PAIR_RECHECK_MS, untilDeadline);
+    this.#pendingTimer = this.#scheduler.setTimer(() => {
+      this.#pendingTimer = null;
+      if (this.#disposed) return;
+      for (const sessionId of this.#pendingSessions) this.#dirty.add(sessionId);
+      void this.#drain();
+    }, delay);
   }
 
   #scheduleEmit(): void {

@@ -169,21 +169,23 @@ const CENSUS: Readonly<
    */
   cc: {
     tools: {
-      sessions: 9,
-      toolNodes: 948,
-      startPresent: 948,
+      // 0.9.2: +2 sessions and +114 tool nodes, the two cc-2.1.283 sessions.
+      sessions: 11,
+      toolNodes: 1062,
+      startPresent: 1062,
       startAbsent: 0,
       // TWO CALLS IN THE WHOLE CORPUS HAVE NO END, and that is the F14:absent
       // population for this engine: a `tool_use` block whose `tool_result`
       // never arrived in a captured file. Nothing else here can produce one,
       // which is why `startAbsent` is 0 and this is not.
-      endPresent: 946,
+      endPresent: 1060,
       endAbsent: 2,
     },
-    // 899 turns cross-checks against `src/model/graft.ts`'s own independently
-    // measured "899 message ids across the 22 transcripts under `fixtures/cc-*`
-    // + `/projects/`" — a figure that block derived for a different question.
-    turns: { agentsWithSeries: 22, turns: 899, atPresent: 899, atAbsent: 0 },
+    // Before 0.9.2 this read 899 turns on 22 agents, which cross-checked
+    // against `src/model/graft.ts`'s own "899 message ids across the 22
+    // transcripts under `fixtures/cc-*`". cc-2.1.283 added 95 turns on 26
+    // agents (2 mains, 24 subagents); that graft.ts figure predates it.
+    turns: { agentsWithSeries: 48, turns: 994, atPresent: 994, atAbsent: 0 },
   },
   /*
    * OPENCODE — `part.data.state.time.start`/`.end`, both present on all 345

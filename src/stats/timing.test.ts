@@ -256,20 +256,22 @@ function census(engine: StatsEngine): TimingCensus {
  */
 const CENSUS: Readonly<Record<StatsEngine, TimingCensus>> = {
   /*
-   * CLAUDE CODE — every session states a span. ONE of the nine states a single
+   * CLAUDE CODE — every session states a span. ONE of the eleven states a single
    * instant and no tool start at all, so its `wallMs` is 0 and every figure
-   * that needs a start or a non-zero span is absent on it. That is the 9 / 8
+   * that needs a start or a non-zero span is absent on it. That is the 11 / 10
    * split below, and it is one session rather than two different ones.
    */
   cc: {
-    sessions: 9,
-    full: 9,
+    // 0.9.2: 11 / 10 after cc-2.1.283's two sessions, both of which state a
+    // span and a tool start; the one single-instant session is unchanged.
+    sessions: 11,
+    full: 11,
     namedF14: 0,
-    wallMs: 9,
-    timeToFirstToolMs: 8,
-    longestGapMs: 8,
-    tokensPerMin: 8,
-    callsPerMin: 8,
+    wallMs: 11,
+    timeToFirstToolMs: 10,
+    longestGapMs: 10,
+    tokensPerMin: 10,
+    callsPerMin: 10,
     // No harvested session has a cost source: no engine wrote one, no
     // telemetry is joined by this reader, and the corpus half of the goldens
     // is derived with an EMPTY price table. The positive arm is the priced

@@ -137,7 +137,7 @@ function census(engine: StatsEngine): F15Census {
  */
 const CENSUS: Readonly<Record<StatsEngine, F15Census>> = {
   /*
-   * CLAUDE CODE — 13 spawn edges, 13 subagents, and ONE of them was spawned by
+   * CLAUDE CODE — 37 spawn edges, 37 subagents, and ONE of them was spawned by
    * a call with no result. That one is a real harvested session, not a
    * manufactured one: a capture taken while a subagent was still working, so
    * its `Agent` block has no `tool_result` in the parent transcript. It is the
@@ -145,13 +145,15 @@ const CENSUS: Readonly<Record<StatsEngine, F15Census>> = {
    * here is 1 rather than 0.
    */
   cc: {
-    sessions: 9,
-    full: 9,
-    withEdges: 9,
-    edges: 13,
-    edgesJoinable: 13,
-    subagents: 13,
-    counted: 9,
+    // 0.9.2: cc-2.1.283 added 2 sessions and 24 edges, all joinable, all
+    // with their results — the 4x2 run finished before it was harvested.
+    sessions: 11,
+    full: 11,
+    withEdges: 11,
+    edges: 37,
+    edgesJoinable: 37,
+    subagents: 37,
+    counted: 11,
     unreceived: 1,
     named: 0,
   },

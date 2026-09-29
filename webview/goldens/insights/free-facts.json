@@ -1,32 +1,32 @@
 {
   "latest": {
-    "sinceMs": 1787993601597,
-    "counted": 10,
+    "sinceMs": 1790011483647,
+    "counted": 2,
     "excluded": 0,
     "byEngine": {
-      "cc": 4,
-      "codex": 5,
-      "opencode": 1
+      "cc": 2,
+      "codex": 0,
+      "opencode": 0
     },
     "tiles": [
       {
         "id": "sessions",
         "label": "sessions recorded",
-        "count": 10,
-        "value": "10",
-        "note": "Claude Code 4 · Codex 5 · OpenCode 1"
+        "count": 2,
+        "value": "2",
+        "note": "Claude Code 2"
       },
       {
         "id": "compactions",
         "label": "compactions",
-        "count": 2,
-        "value": "2"
+        "count": 0,
+        "value": "0"
       },
       {
         "id": "idleResumes",
         "label": "long-idle resumes",
-        "count": 2,
-        "value": "2",
+        "count": 0,
+        "value": "0",
         "note": "sessions with a gap of 120,000 ms · 2 m or more"
       },
       {
@@ -38,8 +38,8 @@
       {
         "id": "failedCalls",
         "label": "failed tool calls",
-        "count": 21,
-        "value": "21"
+        "count": 19,
+        "value": "19"
       },
       {
         "id": "stalls",
@@ -56,14 +56,14 @@
       {
         "id": "promptTokens",
         "label": "prompt tokens",
-        "count": 253369192,
-        "value": "253,369,192"
+        "count": 9221636,
+        "value": "9,221,636"
       },
       {
         "id": "outputTokens",
         "label": "output tokens",
-        "count": 571284,
-        "value": "571,284"
+        "count": 16916,
+        "value": "16,916"
       },
       {
         "id": "engineCost",

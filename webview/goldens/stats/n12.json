@@ -10,9 +10,9 @@
     "cc-2.1.251-d16538d5-da75-4d0a-aa99-652916287f7c",
     "cc-2.1.260-75ef0bbf-2493-4c77-8af7-3a56fb2ce36e",
     "cc-2.1.260-99f96635-2042-41dc-9000-bbc9f9233bc3",
-    "codex-0.151.0-alpha.7.2-01a063dd-2cc6-7940-9df9-57a1e53017b8",
-    "codex-0.151.0-alpha.7.2-01a0641d-8281-7703-97fa-5a829bb77563",
-    "codex-0.151.0-alpha.7.2-01a0641e-d278-7230-a2c7-e5810d6d8327"
+    "cc-2.1.283-853296cc-eb78-4a6c-b747-cd5417473cc5",
+    "cc-2.1.283-d860ab28-db10-40dc-8775-ae00eeb21f23",
+    "codex-0.151.0-alpha.7.2-01a063dd-2cc6-7940-9df9-57a1e53017b8"
   ],
   "layout": {
     "files": {
@@ -146,6 +146,222 @@
           "errors": 0,
           "touches": 2,
           "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\converters\\package.json",
+          "basename": "package.json",
+          "reads": 0,
+          "edits": 0,
+          "writes": 2,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\converters\\roman-numerals.js",
+          "basename": "roman-numerals.js",
+          "reads": 0,
+          "edits": 0,
+          "writes": 2,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 2,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\converters\\roman-numerals.test.js",
+          "basename": "roman-numerals.test.js",
+          "reads": 0,
+          "edits": 0,
+          "writes": 2,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 2,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\converters\\temperature-convert.js",
+          "basename": "temperature-convert.js",
+          "reads": 0,
+          "edits": 0,
+          "writes": 2,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 2,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\converters\\temperature-convert.test.js",
+          "basename": "temperature-convert.test.js",
+          "reads": 0,
+          "edits": 0,
+          "writes": 2,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 2,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\numbers\\fizzbuzz.js",
+          "basename": "fizzbuzz.js",
+          "reads": 0,
+          "edits": 0,
+          "writes": 2,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 2,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\numbers\\fizzbuzz.test.js",
+          "basename": "fizzbuzz.test.js",
+          "reads": 0,
+          "edits": 0,
+          "writes": 2,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 2,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\numbers\\package.json",
+          "basename": "package.json",
+          "reads": 0,
+          "edits": 0,
+          "writes": 2,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\numbers\\prime-sieve.js",
+          "basename": "prime-sieve.js",
+          "reads": 0,
+          "edits": 0,
+          "writes": 2,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 2,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\numbers\\prime-sieve.test.js",
+          "basename": "prime-sieve.test.js",
+          "reads": 0,
+          "edits": 0,
+          "writes": 2,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 2,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\puzzles\\anagram.js",
+          "basename": "anagram.js",
+          "reads": 0,
+          "edits": 0,
+          "writes": 2,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 2,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\puzzles\\anagram.test.js",
+          "basename": "anagram.test.js",
+          "reads": 0,
+          "edits": 0,
+          "writes": 2,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 2,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\puzzles\\balanced-brackets.js",
+          "basename": "balanced-brackets.js",
+          "reads": 0,
+          "edits": 0,
+          "writes": 2,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 2,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\puzzles\\balanced-brackets.test.js",
+          "basename": "balanced-brackets.test.js",
+          "reads": 0,
+          "edits": 0,
+          "writes": 2,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 2,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\strings\\caesar-cipher.js",
+          "basename": "caesar-cipher.js",
+          "reads": 0,
+          "edits": 0,
+          "writes": 2,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 2,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\strings\\caesar-cipher.test.js",
+          "basename": "caesar-cipher.test.js",
+          "reads": 0,
+          "edits": 0,
+          "writes": 2,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 2,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\strings\\palindrome.js",
+          "basename": "palindrome.js",
+          "reads": 0,
+          "edits": 0,
+          "writes": 2,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 2,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\strings\\palindrome.test.js",
+          "basename": "palindrome.test.js",
+          "reads": 0,
+          "edits": 0,
+          "writes": 2,
+          "errors": 0,
+          "touches": 2,
+          "sessions": 2,
           "loop": false,
           "churn": false
         },
@@ -695,6 +911,42 @@
           "reads": 1,
           "edits": 0,
           "writes": 0,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\package.json",
+          "basename": "package.json",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\puzzles\\package.json",
+          "basename": "package.json",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
+          "errors": 0,
+          "touches": 1,
+          "sessions": 1,
+          "loop": false,
+          "churn": false
+        },
+        {
+          "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\strings\\package.json",
+          "basename": "package.json",
+          "reads": 0,
+          "edits": 0,
+          "writes": 1,
           "errors": 0,
           "touches": 1,
           "sessions": 1,
@@ -1573,20 +1825,20 @@
         {
           "toolName": "Bash",
           "class": "shell",
-          "calls": 747,
-          "sessions": 8,
+          "calls": 766,
+          "sessions": 10,
           "errors": 19,
-          "durationMsSum": 3188612,
+          "durationMsSum": 3276637,
           "durationMsMax": 602628
         },
         {
           "toolName": "Write",
           "class": "write",
-          "calls": 73,
-          "sessions": 3,
+          "calls": 112,
+          "sessions": 5,
           "errors": 0,
-          "durationMsSum": 89976,
-          "durationMsMax": 3311
+          "durationMsSum": 224143,
+          "durationMsMax": 6447
         },
         {
           "toolName": "Read",
@@ -1598,6 +1850,15 @@
           "durationMsMax": 519246
         },
         {
+          "toolName": "Agent",
+          "class": "spawn",
+          "calls": 37,
+          "sessions": 8,
+          "errors": 13,
+          "durationMsSum": 5489092,
+          "durationMsMax": 2846645
+        },
+        {
           "toolName": "Edit",
           "class": "edit",
           "calls": 34,
@@ -1607,31 +1868,22 @@
           "durationMsMax": 6864
         },
         {
-          "toolName": "Agent",
-          "class": "spawn",
-          "calls": 13,
-          "sessions": 6,
-          "errors": 1,
-          "durationMsSum": 4644626,
-          "durationMsMax": 2846645
+          "toolName": "PowerShell",
+          "class": "other",
+          "calls": 18,
+          "sessions": 2,
+          "errors": 5,
+          "durationMsSum": 90990,
+          "durationMsMax": 12402
         },
         {
-          "toolName": "exec",
-          "class": "shell",
-          "calls": 10,
-          "sessions": 3
-        },
-        {
-          "toolName": "spawn_agent",
-          "class": "spawn",
-          "calls": 9,
-          "sessions": 3
-        },
-        {
-          "toolName": "wait_agent",
-          "class": "spawn",
-          "calls": 9,
-          "sessions": 3
+          "toolName": "SubagentHandback",
+          "class": "other",
+          "calls": 14,
+          "sessions": 2,
+          "errors": 2,
+          "durationMsSum": 27450,
+          "durationMsMax": 2814
         },
         {
           "toolName": "Glob",
@@ -1661,9 +1913,9 @@
           "durationMsMax": 2708
         },
         {
-          "toolName": "send_message",
-          "class": "spawn",
-          "calls": 3,
+          "toolName": "exec",
+          "class": "shell",
+          "calls": 4,
           "sessions": 1
         },
         {
@@ -1694,7 +1946,13 @@
           "durationMsMax": 292
         },
         {
-          "toolName": "list_agents",
+          "toolName": "spawn_agent",
+          "class": "spawn",
+          "calls": 1,
+          "sessions": 1
+        },
+        {
+          "toolName": "wait_agent",
           "class": "spawn",
           "calls": 1,
           "sessions": 1
@@ -2245,29 +2503,9 @@
             130,
             131
           ]
-        },
-        {
-          "kind": "loop",
-          "key": "01a0641d-8281-7703-97fa-5a829bb77563:root:loop:4",
-          "session": {
-            "sessionId": "01a0641d-8281-7703-97fa-5a829bb77563",
-            "engine": "codex",
-            "projectSlug": "C--Users-dev-codex-probe-scratch",
-            "startedAt": 1788386050871
-          },
-          "agentId": "root",
-          "term": "identical-call loop",
-          "toolName": "wait_agent",
-          "count": 4,
-          "ordinals": [
-            4,
-            5,
-            7,
-            8
-          ]
         }
       ],
-      "loops": 2,
+      "loops": 1,
       "churn": 7,
       "records": 12
     },
@@ -3172,6 +3410,422 @@
         },
         {
           "session": {
+            "sessionId": "853296cc-eb78-4a6c-b747-cd5417473cc5",
+            "engine": "cc",
+            "projectSlug": "c--Users-dev-projects-agent-deck",
+            "startedAt": 1790612683647
+          },
+          "agents": [
+            {
+              "agentId": "root",
+              "kind": "main",
+              "spawnDepth": 0,
+              "primary": "main",
+              "prompt": 103815,
+              "output": 2846,
+              "toolCalls": 4,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.294148244473342,
+              "model": "claude-opus-5-5"
+            },
+            {
+              "agentId": "a8a288e237d18394a",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 190535,
+              "output": 32,
+              "toolCalls": 3,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.6144960243524812,
+              "model": "claude-opus-5-5"
+            },
+            {
+              "agentId": "a6d54f08869ed1d31",
+              "kind": "subagent",
+              "spawnDepth": 2,
+              "primary": "subagent d2",
+              "prompt": 190408,
+              "output": 455,
+              "toolCalls": 3,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.6133775891769253,
+              "model": "claude-opus-5-5"
+            },
+            {
+              "agentId": "a1f135da3f6900f6b",
+              "kind": "subagent",
+              "spawnDepth": 2,
+              "primary": "subagent d2",
+              "prompt": 190526,
+              "output": 537,
+              "toolCalls": 3,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.6130764305134208,
+              "model": "claude-opus-5-5"
+            },
+            {
+              "agentId": "ac2f9d12bf70dc7ab",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 190557,
+              "output": 40,
+              "toolCalls": 3,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.6144618145751665,
+              "model": "claude-opus-5-5"
+            },
+            {
+              "agentId": "a0d4de2ee7f575911",
+              "kind": "subagent",
+              "spawnDepth": 2,
+              "primary": "subagent d2",
+              "prompt": 190582,
+              "output": 485,
+              "toolCalls": 3,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.6131953699719805,
+              "model": "claude-opus-5-5"
+            },
+            {
+              "agentId": "afffa701914f90777",
+              "kind": "subagent",
+              "spawnDepth": 2,
+              "primary": "subagent d2",
+              "prompt": 287993,
+              "output": 615,
+              "toolCalls": 4,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.7430041702402489,
+              "model": "claude-opus-5-5"
+            },
+            {
+              "agentId": "a488e566e2e363909",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 190508,
+              "output": 40,
+              "toolCalls": 3,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.6145936128666513,
+              "model": "claude-opus-5-5"
+            },
+            {
+              "agentId": "ada940b2ab62e62ee",
+              "kind": "subagent",
+              "spawnDepth": 2,
+              "primary": "subagent d2",
+              "prompt": 190621,
+              "output": 648,
+              "toolCalls": 3,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.6127446608715724,
+              "model": "claude-opus-5-5"
+            },
+            {
+              "agentId": "ac5bafc4ca64e3507",
+              "kind": "subagent",
+              "spawnDepth": 2,
+              "primary": "subagent d2",
+              "prompt": 190409,
+              "output": 440,
+              "toolCalls": 3,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.6134268863341543,
+              "model": "claude-opus-5-5"
+            },
+            {
+              "agentId": "a66be967c3f4680a0",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 190516,
+              "output": 36,
+              "toolCalls": 3,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.6145783031346449,
+              "model": "claude-opus-5-5"
+            },
+            {
+              "agentId": "a7a760dbdabfc8522",
+              "kind": "subagent",
+              "spawnDepth": 2,
+              "primary": "subagent d2",
+              "prompt": 190650,
+              "output": 545,
+              "toolCalls": 3,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.6129923944400735,
+              "model": "claude-opus-5-5"
+            },
+            {
+              "agentId": "a3155c43740cc606e",
+              "kind": "subagent",
+              "spawnDepth": 2,
+              "primary": "subagent d2",
+              "prompt": 287675,
+              "output": 484,
+              "toolCalls": 4,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.7432727904753629,
+              "model": "claude-opus-5-5"
+            }
+          ],
+          "totals": {
+            "prompt": 2584795,
+            "output": 7203,
+            "cacheRead": 1627617
+          },
+          "cost": {
+            "label": "not computed"
+          },
+          "models": [
+            "claude-opus-5-5"
+          ],
+          "strip": {
+            "width": 0,
+            "height": 18,
+            "pitch": 6,
+            "markers": []
+          },
+          "stalls": [],
+          "compactions": 0,
+          "subagents": 12,
+          "silentSubagents": 0,
+          "timing": {
+            "wallMs": 54056,
+            "timeToFirstToolMs": 3361,
+            "longestGapMs": 11254,
+            "tokensPerMin": 2877014.2074885303,
+            "callsPerMin": 46.61832174041734
+          },
+          "subagentsUnreceived": 0
+        },
+        {
+          "session": {
+            "sessionId": "d860ab28-db10-40dc-8775-ae00eeb21f23",
+            "engine": "cc",
+            "projectSlug": "c--Users-dev-projects-agent-deck",
+            "startedAt": 1790612506282
+          },
+          "agents": [
+            {
+              "agentId": "root",
+              "kind": "main",
+              "spawnDepth": 0,
+              "primary": "main",
+              "prompt": 328891,
+              "output": 3472,
+              "toolCalls": 5,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.7417928736268247,
+              "model": "claude-opus-5-5"
+            },
+            {
+              "agentId": "aa93fbc04d8876d9e",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 488840,
+              "output": 300,
+              "toolCalls": 5,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.7959925538008347,
+              "model": "claude-opus-5-5"
+            },
+            {
+              "agentId": "aa1f0a4d0344d5d13",
+              "kind": "subagent",
+              "spawnDepth": 2,
+              "primary": "subagent d2",
+              "prompt": 582190,
+              "output": 1033,
+              "toolCalls": 6,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.8709012521685361,
+              "model": "claude-opus-5-5"
+            },
+            {
+              "agentId": "a2dea074dc95e5413",
+              "kind": "subagent",
+              "spawnDepth": 2,
+              "primary": "subagent d2",
+              "prompt": 582650,
+              "output": 907,
+              "toolCalls": 6,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.8710992877370635,
+              "model": "claude-opus-5-5"
+            },
+            {
+              "agentId": "a7ba3c4952e54c8fc",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 488930,
+              "output": 94,
+              "toolCalls": 5,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.7959892009081054,
+              "model": "claude-opus-5-5"
+            },
+            {
+              "agentId": "a11592071f7a3b225",
+              "kind": "subagent",
+              "spawnDepth": 2,
+              "primary": "subagent d2",
+              "prompt": 582352,
+              "output": 816,
+              "toolCalls": 6,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.871077973459351,
+              "model": "claude-opus-5-5"
+            },
+            {
+              "agentId": "a7658bb5d7658f6f3",
+              "kind": "subagent",
+              "spawnDepth": 2,
+              "primary": "subagent d2",
+              "prompt": 484958,
+              "output": 614,
+              "toolCalls": 6,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.8448071791784031,
+              "model": "claude-opus-5-5"
+            },
+            {
+              "agentId": "af93ee47b4f1d3e09",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 686002,
+              "output": 273,
+              "toolCalls": 6,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.8538969274142058,
+              "model": "claude-opus-5-5"
+            },
+            {
+              "agentId": "a704ec1707a92b778",
+              "kind": "subagent",
+              "spawnDepth": 2,
+              "primary": "subagent d2",
+              "prompt": 575794,
+              "output": 1017,
+              "toolCalls": 6,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.8308683313824041,
+              "model": "claude-opus-5-5"
+            },
+            {
+              "agentId": "ac91af1f8792b7c0e",
+              "kind": "subagent",
+              "spawnDepth": 2,
+              "primary": "subagent d2",
+              "prompt": 478354,
+              "output": 472,
+              "toolCalls": 6,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.7965230770517232,
+              "model": "claude-opus-5-5"
+            },
+            {
+              "agentId": "a889eb886a48c5f8f",
+              "kind": "subagent",
+              "spawnDepth": 1,
+              "primary": "subagent d1",
+              "prompt": 388995,
+              "output": 79,
+              "toolCalls": 4,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.7448758981477911,
+              "model": "claude-opus-5-5"
+            },
+            {
+              "agentId": "ad7ff60f81c10a530",
+              "kind": "subagent",
+              "spawnDepth": 2,
+              "primary": "subagent d2",
+              "prompt": 484929,
+              "output": 562,
+              "toolCalls": 6,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.8448329549274224,
+              "model": "claude-opus-5-5"
+            },
+            {
+              "agentId": "a8f662d828354b18d",
+              "kind": "subagent",
+              "spawnDepth": 2,
+              "primary": "subagent d2",
+              "prompt": 483956,
+              "output": 74,
+              "toolCalls": 5,
+              "silent": false,
+              "resultUnreceived": false,
+              "cacheRatio": 0.84536610766268,
+              "model": "claude-opus-5-5"
+            }
+          ],
+          "totals": {
+            "prompt": 6636841,
+            "output": 9713,
+            "cacheRead": 5507572
+          },
+          "cost": {
+            "label": "not computed"
+          },
+          "models": [
+            "claude-opus-5-5"
+          ],
+          "strip": {
+            "width": 0,
+            "height": 18,
+            "pitch": 6,
+            "markers": []
+          },
+          "stalls": [],
+          "compactions": 0,
+          "subagents": 12,
+          "silentSubagents": 0,
+          "timing": {
+            "wallMs": 90739,
+            "timeToFirstToolMs": 3911,
+            "longestGapMs": 68242,
+            "tokensPerMin": 4394948.5888096625,
+            "callsPerMin": 47.609076582285454
+          },
+          "subagentsUnreceived": 0
+        },
+        {
+          "session": {
             "sessionId": "01a063dd-2cc6-7940-9df9-57a1e53017b8",
             "engine": "codex",
             "projectSlug": "C--Users-dev-codex-probe-scratch",
@@ -3231,192 +3885,6 @@
             "callsPerMin": 11.896893588896233
           },
           "contextFill": 0.061273219814241484,
-          "subagentsUnreceived": 0
-        },
-        {
-          "session": {
-            "sessionId": "01a0641d-8281-7703-97fa-5a829bb77563",
-            "engine": "codex",
-            "projectSlug": "C--Users-dev-codex-probe-scratch",
-            "startedAt": 1788386050871
-          },
-          "agents": [
-            {
-              "agentId": "root",
-              "kind": "main",
-              "spawnDepth": 0,
-              "primary": "main",
-              "prompt": 157334,
-              "output": 499,
-              "toolCalls": 9,
-              "silent": false,
-              "resultUnreceived": false,
-              "model": "gpt-5.6-terra"
-            },
-            {
-              "agentId": "01a0641d-9c3c-7612-a666-786b575d4194",
-              "kind": "subagent",
-              "spawnDepth": 1,
-              "primary": "subagent d1",
-              "prompt": 34206,
-              "output": 125,
-              "toolCalls": 1,
-              "silent": false,
-              "resultUnreceived": false,
-              "model": "gpt-5.6-terra"
-            },
-            {
-              "agentId": "01a0641d-ab50-76e1-829c-4ccda108e7b4",
-              "kind": "subagent",
-              "spawnDepth": 1,
-              "primary": "subagent d1",
-              "prompt": 34218,
-              "output": 137,
-              "toolCalls": 1,
-              "silent": false,
-              "resultUnreceived": false,
-              "model": "gpt-5.6-terra"
-            },
-            {
-              "agentId": "01a0641d-bacc-7bd3-8027-baa3ffecd15c",
-              "kind": "subagent",
-              "spawnDepth": 1,
-              "primary": "subagent d1",
-              "prompt": 34220,
-              "output": 139,
-              "toolCalls": 1,
-              "silent": false,
-              "resultUnreceived": false,
-              "model": "gpt-5.6-terra"
-            },
-            {
-              "agentId": "01a0641d-ffa4-77a3-8134-a253f01f1bd6",
-              "kind": "subagent",
-              "spawnDepth": 1,
-              "primary": "subagent d1",
-              "prompt": 51536,
-              "output": 150,
-              "toolCalls": 2,
-              "silent": false,
-              "resultUnreceived": false,
-              "model": "gpt-5.6-terra"
-            },
-            {
-              "agentId": "01a0641e-19d6-7800-8330-98371a1683a5",
-              "kind": "subagent",
-              "spawnDepth": 2,
-              "primary": "subagent d2",
-              "prompt": 34231,
-              "output": 132,
-              "toolCalls": 1,
-              "silent": false,
-              "resultUnreceived": false,
-              "model": "gpt-5.6-terra"
-            }
-          ],
-          "totals": {
-            "prompt": 345745,
-            "output": 1182
-          },
-          "cost": {
-            "label": "not computed"
-          },
-          "models": [
-            "gpt-5.6-terra"
-          ],
-          "strip": {
-            "width": 0,
-            "height": 18,
-            "pitch": 6,
-            "markers": []
-          },
-          "stalls": [],
-          "compactions": 0,
-          "subagents": 5,
-          "silentSubagents": 0,
-          "timing": {
-            "wallMs": 48006,
-            "timeToFirstToolMs": 0,
-            "longestGapMs": 16388,
-            "tokensPerMin": 433604.5494313211,
-            "callsPerMin": 18.747656542932134
-          },
-          "contextFill": 0.06250386996904025,
-          "subagentsUnreceived": 0
-        },
-        {
-          "session": {
-            "sessionId": "01a0641e-d278-7230-a2c7-e5810d6d8327",
-            "engine": "codex",
-            "projectSlug": "C--Users-dev-codex-probe-scratch",
-            "startedAt": 1788386136880
-          },
-          "agents": [
-            {
-              "agentId": "root",
-              "kind": "main",
-              "spawnDepth": 0,
-              "primary": "main",
-              "prompt": 92869,
-              "output": 450,
-              "toolCalls": 5,
-              "silent": false,
-              "resultUnreceived": false,
-              "model": "gpt-5.6-terra"
-            },
-            {
-              "agentId": "01a0641e-f36c-7503-be16-25989a8aa7b2",
-              "kind": "subagent",
-              "spawnDepth": 1,
-              "primary": "subagent d1",
-              "prompt": 86011,
-              "output": 360,
-              "toolCalls": 4,
-              "silent": false,
-              "resultUnreceived": false,
-              "model": "gpt-5.6-terra"
-            },
-            {
-              "agentId": "01a0641f-2ad6-7173-831c-bdbc535f874a",
-              "kind": "subagent",
-              "spawnDepth": 2,
-              "primary": "subagent d2",
-              "prompt": 51017,
-              "output": 183,
-              "toolCalls": 2,
-              "silent": false,
-              "resultUnreceived": false,
-              "model": "gpt-5.6-terra"
-            }
-          ],
-          "totals": {
-            "prompt": 229897,
-            "output": 993
-          },
-          "cost": {
-            "label": "not computed"
-          },
-          "models": [
-            "gpt-5.6-terra"
-          ],
-          "strip": {
-            "width": 0,
-            "height": 18,
-            "pitch": 6,
-            "markers": []
-          },
-          "stalls": [],
-          "compactions": 0,
-          "subagents": 2,
-          "silentSubagents": 0,
-          "timing": {
-            "wallMs": 36280,
-            "timeToFirstToolMs": 0,
-            "longestGapMs": 21713,
-            "tokensPerMin": 381846.7475192944,
-            "callsPerMin": 18.191841234840133
-          },
-          "contextFill": 0.061400928792569656,
           "subagentsUnreceived": 0
         }
       ],
@@ -3484,6 +3952,18 @@
                   "index": 8,
                   "x": 192,
                   "y": 99707750
+                },
+                {
+                  "sessionId": "853296cc-eb78-4a6c-b747-cd5417473cc5",
+                  "index": 9,
+                  "x": 216,
+                  "y": 2584795
+                },
+                {
+                  "sessionId": "d860ab28-db10-40dc-8775-ae00eeb21f23",
+                  "index": 10,
+                  "x": 240,
+                  "y": 6636841
                 }
               ],
               "max": 152542397,
@@ -3494,24 +3974,12 @@
               "points": [
                 {
                   "sessionId": "01a063dd-2cc6-7940-9df9-57a1e53017b8",
-                  "index": 9,
-                  "x": 216,
-                  "y": 127028
-                },
-                {
-                  "sessionId": "01a0641d-8281-7703-97fa-5a829bb77563",
-                  "index": 10,
-                  "x": 240,
-                  "y": 345745
-                },
-                {
-                  "sessionId": "01a0641e-d278-7230-a2c7-e5810d6d8327",
                   "index": 11,
                   "x": 264,
-                  "y": 229897
+                  "y": 127028
                 }
               ],
-              "max": 345745,
+              "max": 127028,
               "flat": false
             }
           ]
@@ -3576,6 +4044,18 @@
                   "index": 8,
                   "x": 192,
                   "y": 0
+                },
+                {
+                  "sessionId": "853296cc-eb78-4a6c-b747-cd5417473cc5",
+                  "index": 9,
+                  "x": 216,
+                  "y": 0
+                },
+                {
+                  "sessionId": "d860ab28-db10-40dc-8775-ae00eeb21f23",
+                  "index": 10,
+                  "x": 240,
+                  "y": 0
                 }
               ],
               "max": 1,
@@ -3586,25 +4066,13 @@
               "points": [
                 {
                   "sessionId": "01a063dd-2cc6-7940-9df9-57a1e53017b8",
-                  "index": 9,
-                  "x": 216,
-                  "y": 0
-                },
-                {
-                  "sessionId": "01a0641d-8281-7703-97fa-5a829bb77563",
-                  "index": 10,
-                  "x": 240,
-                  "y": 1
-                },
-                {
-                  "sessionId": "01a0641e-d278-7230-a2c7-e5810d6d8327",
                   "index": 11,
                   "x": 264,
                   "y": 0
                 }
               ],
-              "max": 1,
-              "flat": false
+              "max": 0,
+              "flat": true
             }
           ]
         },
@@ -3667,9 +4135,21 @@
                   "index": 8,
                   "x": 192,
                   "y": 625857.070765611
+                },
+                {
+                  "sessionId": "853296cc-eb78-4a6c-b747-cd5417473cc5",
+                  "index": 9,
+                  "x": 216,
+                  "y": 2877014.2074885303
+                },
+                {
+                  "sessionId": "d860ab28-db10-40dc-8775-ae00eeb21f23",
+                  "index": 10,
+                  "x": 240,
+                  "y": 4394948.5888096625
                 }
               ],
-              "max": 1218949.9951071532,
+              "max": 4394948.5888096625,
               "flat": false
             },
             {
@@ -3677,24 +4157,12 @@
               "points": [
                 {
                   "sessionId": "01a063dd-2cc6-7940-9df9-57a1e53017b8",
-                  "index": 9,
-                  "x": 216,
-                  "y": 253011.2359550562
-                },
-                {
-                  "sessionId": "01a0641d-8281-7703-97fa-5a829bb77563",
-                  "index": 10,
-                  "x": 240,
-                  "y": 433604.5494313211
-                },
-                {
-                  "sessionId": "01a0641e-d278-7230-a2c7-e5810d6d8327",
                   "index": 11,
                   "x": 264,
-                  "y": 381846.7475192944
+                  "y": 253011.2359550562
                 }
               ],
-              "max": 433604.5494313211,
+              "max": 253011.2359550562,
               "flat": false
             }
           ]
@@ -3774,26 +4242,26 @@
           "x": 192
         },
         {
-          "sessionId": "01a063dd-2cc6-7940-9df9-57a1e53017b8",
-          "engine": "codex",
-          "projectSlug": "C--Users-dev-codex-probe-scratch",
-          "startedAt": 1788381834630,
+          "sessionId": "853296cc-eb78-4a6c-b747-cd5417473cc5",
+          "engine": "cc",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1790612683647,
           "index": 9,
           "x": 216
         },
         {
-          "sessionId": "01a0641d-8281-7703-97fa-5a829bb77563",
-          "engine": "codex",
-          "projectSlug": "C--Users-dev-codex-probe-scratch",
-          "startedAt": 1788386050871,
+          "sessionId": "d860ab28-db10-40dc-8775-ae00eeb21f23",
+          "engine": "cc",
+          "projectSlug": "c--Users-dev-projects-agent-deck",
+          "startedAt": 1790612506282,
           "index": 10,
           "x": 240
         },
         {
-          "sessionId": "01a0641e-d278-7230-a2c7-e5810d6d8327",
+          "sessionId": "01a063dd-2cc6-7940-9df9-57a1e53017b8",
           "engine": "codex",
           "projectSlug": "C--Users-dev-codex-probe-scratch",
-          "startedAt": 1788386136880,
+          "startedAt": 1788381834630,
           "index": 11,
           "x": 264
         }

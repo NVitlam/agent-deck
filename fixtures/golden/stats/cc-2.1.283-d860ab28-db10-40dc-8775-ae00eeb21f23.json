@@ -1,0 +1,456 @@
+{
+  "statsSchemaVersion": 3,
+  "sessionId": "d860ab28-db10-40dc-8775-ae00eeb21f23",
+  "engine": "cc",
+  "projectSlug": "c--Users-dev-projects-agent-deck",
+  "startedAt": 1790612506282,
+  "coverage": "full",
+  "agents": [
+    {
+      "agentId": "root",
+      "kind": "main",
+      "spawnDepth": 0,
+      "prompt": 328891,
+      "output": 3472,
+      "cacheRead": 243969,
+      "cacheRatio": 0.7417928736268247,
+      "toolCalls": 5,
+      "silent": false,
+      "resultUnreceived": false,
+      "model": "claude-opus-5-5"
+    },
+    {
+      "agentId": "aa93fbc04d8876d9e",
+      "kind": "subagent",
+      "spawnDepth": 1,
+      "prompt": 488840,
+      "output": 300,
+      "cacheRead": 389113,
+      "cacheRatio": 0.7959925538008347,
+      "toolCalls": 5,
+      "silent": false,
+      "resultUnreceived": false,
+      "model": "claude-opus-5-5",
+      "agentType": "general-purpose"
+    },
+    {
+      "agentId": "aa1f0a4d0344d5d13",
+      "kind": "subagent",
+      "spawnDepth": 2,
+      "prompt": 582190,
+      "output": 1033,
+      "cacheRead": 507030,
+      "cacheRatio": 0.8709012521685361,
+      "toolCalls": 6,
+      "silent": false,
+      "resultUnreceived": false,
+      "model": "claude-opus-5-5",
+      "agentType": "general-purpose"
+    },
+    {
+      "agentId": "a2dea074dc95e5413",
+      "kind": "subagent",
+      "spawnDepth": 2,
+      "prompt": 582650,
+      "output": 907,
+      "cacheRead": 507546,
+      "cacheRatio": 0.8710992877370635,
+      "toolCalls": 6,
+      "silent": false,
+      "resultUnreceived": false,
+      "model": "claude-opus-5-5",
+      "agentType": "general-purpose"
+    },
+    {
+      "agentId": "a7ba3c4952e54c8fc",
+      "kind": "subagent",
+      "spawnDepth": 1,
+      "prompt": 488930,
+      "output": 94,
+      "cacheRead": 389183,
+      "cacheRatio": 0.7959892009081054,
+      "toolCalls": 5,
+      "silent": false,
+      "resultUnreceived": false,
+      "model": "claude-opus-5-5",
+      "agentType": "general-purpose"
+    },
+    {
+      "agentId": "a11592071f7a3b225",
+      "kind": "subagent",
+      "spawnDepth": 2,
+      "prompt": 582352,
+      "output": 816,
+      "cacheRead": 507274,
+      "cacheRatio": 0.871077973459351,
+      "toolCalls": 6,
+      "silent": false,
+      "resultUnreceived": false,
+      "model": "claude-opus-5-5",
+      "agentType": "general-purpose"
+    },
+    {
+      "agentId": "a7658bb5d7658f6f3",
+      "kind": "subagent",
+      "spawnDepth": 2,
+      "prompt": 484958,
+      "output": 614,
+      "cacheRead": 409696,
+      "cacheRatio": 0.8448071791784031,
+      "toolCalls": 6,
+      "silent": false,
+      "resultUnreceived": false,
+      "model": "claude-opus-5-5",
+      "agentType": "general-purpose"
+    },
+    {
+      "agentId": "af93ee47b4f1d3e09",
+      "kind": "subagent",
+      "spawnDepth": 1,
+      "prompt": 686002,
+      "output": 273,
+      "cacheRead": 585775,
+      "cacheRatio": 0.8538969274142058,
+      "toolCalls": 6,
+      "silent": false,
+      "resultUnreceived": false,
+      "model": "claude-opus-5-5",
+      "agentType": "general-purpose"
+    },
+    {
+      "agentId": "a704ec1707a92b778",
+      "kind": "subagent",
+      "spawnDepth": 2,
+      "prompt": 575794,
+      "output": 1017,
+      "cacheRead": 478409,
+      "cacheRatio": 0.8308683313824041,
+      "toolCalls": 6,
+      "silent": false,
+      "resultUnreceived": false,
+      "model": "claude-opus-5-5",
+      "agentType": "general-purpose"
+    },
+    {
+      "agentId": "ac91af1f8792b7c0e",
+      "kind": "subagent",
+      "spawnDepth": 2,
+      "prompt": 478354,
+      "output": 472,
+      "cacheRead": 381020,
+      "cacheRatio": 0.7965230770517232,
+      "toolCalls": 6,
+      "silent": false,
+      "resultUnreceived": false,
+      "model": "claude-opus-5-5",
+      "agentType": "general-purpose"
+    },
+    {
+      "agentId": "a889eb886a48c5f8f",
+      "kind": "subagent",
+      "spawnDepth": 1,
+      "prompt": 388995,
+      "output": 79,
+      "cacheRead": 289753,
+      "cacheRatio": 0.7448758981477911,
+      "toolCalls": 4,
+      "silent": false,
+      "resultUnreceived": false,
+      "model": "claude-opus-5-5",
+      "agentType": "general-purpose"
+    },
+    {
+      "agentId": "ad7ff60f81c10a530",
+      "kind": "subagent",
+      "spawnDepth": 2,
+      "prompt": 484929,
+      "output": 562,
+      "cacheRead": 409684,
+      "cacheRatio": 0.8448329549274224,
+      "toolCalls": 6,
+      "silent": false,
+      "resultUnreceived": false,
+      "model": "claude-opus-5-5",
+      "agentType": "general-purpose"
+    },
+    {
+      "agentId": "a8f662d828354b18d",
+      "kind": "subagent",
+      "spawnDepth": 2,
+      "prompt": 483956,
+      "output": 74,
+      "cacheRead": 409120,
+      "cacheRatio": 0.84536610766268,
+      "toolCalls": 5,
+      "silent": false,
+      "resultUnreceived": false,
+      "model": "claude-opus-5-5",
+      "agentType": "general-purpose"
+    }
+  ],
+  "files": [
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\converters\\package.json",
+      "reads": 0,
+      "edits": 0,
+      "writes": 2,
+      "errors": 0,
+      "firstTouchSeq": 48,
+      "lastTouchSeq": 54
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\converters\\roman-numerals.js",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 45,
+      "lastTouchSeq": 45
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\converters\\roman-numerals.test.js",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 46,
+      "lastTouchSeq": 46
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\converters\\temperature-convert.js",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 51,
+      "lastTouchSeq": 51
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\converters\\temperature-convert.test.js",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 52,
+      "lastTouchSeq": 52
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\numbers\\fizzbuzz.js",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 27,
+      "lastTouchSeq": 27
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\numbers\\fizzbuzz.test.js",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 28,
+      "lastTouchSeq": 28
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\numbers\\package.json",
+      "reads": 0,
+      "edits": 0,
+      "writes": 2,
+      "errors": 0,
+      "firstTouchSeq": 30,
+      "lastTouchSeq": 36
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\numbers\\prime-sieve.js",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 33,
+      "lastTouchSeq": 33
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\numbers\\prime-sieve.test.js",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 34,
+      "lastTouchSeq": 34
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\package.json",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 19,
+      "lastTouchSeq": 19
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\puzzles\\anagram.js",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 67,
+      "lastTouchSeq": 67
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\puzzles\\anagram.test.js",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 68,
+      "lastTouchSeq": 68
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\puzzles\\balanced-brackets.js",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 61,
+      "lastTouchSeq": 61
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\puzzles\\balanced-brackets.test.js",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 62,
+      "lastTouchSeq": 62
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\puzzles\\package.json",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 64,
+      "lastTouchSeq": 64
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\strings\\caesar-cipher.js",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 16,
+      "lastTouchSeq": 16
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\strings\\caesar-cipher.test.js",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 17,
+      "lastTouchSeq": 17
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\strings\\package.json",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 13,
+      "lastTouchSeq": 13
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\strings\\palindrome.js",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 10,
+      "lastTouchSeq": 10
+    },
+    {
+      "filePath": "C:\\Users\\dev\\projects\\agent-deck\\demo\\strings\\palindrome.test.js",
+      "reads": 0,
+      "edits": 0,
+      "writes": 1,
+      "errors": 0,
+      "firstTouchSeq": 11,
+      "lastTouchSeq": 11
+    }
+  ],
+  "tools": [
+    {
+      "toolName": "Agent",
+      "class": "spawn",
+      "calls": 12,
+      "errors": 0,
+      "durationMsSum": 448902,
+      "durationMsMax": 75406
+    },
+    {
+      "toolName": "Bash",
+      "class": "shell",
+      "calls": 14,
+      "errors": 0,
+      "durationMsSum": 56768,
+      "durationMsMax": 5822
+    },
+    {
+      "toolName": "PowerShell",
+      "class": "other",
+      "calls": 11,
+      "errors": 3,
+      "durationMsSum": 37683,
+      "durationMsMax": 4516
+    },
+    {
+      "toolName": "SubagentHandback",
+      "class": "other",
+      "calls": 12,
+      "errors": 0,
+      "durationMsSum": 24315,
+      "durationMsMax": 2814
+    },
+    {
+      "toolName": "Write",
+      "class": "write",
+      "calls": 23,
+      "errors": 0,
+      "durationMsSum": 60313,
+      "durationMsMax": 3648
+    }
+  ],
+  "loops": [],
+  "churn": [],
+  "skills": [],
+  "contextChurn": [],
+  "compactions": [],
+  "stalls": [],
+  "timing": {
+    "wallMs": 90739,
+    "timeToFirstToolMs": 3911,
+    "longestGapMs": 68242,
+    "tokensPerMin": 4394948.5888096625,
+    "callsPerMin": 47.609076582285454
+  },
+  "totals": {
+    "prompt": 6636841,
+    "output": 9713,
+    "cacheRead": 5507572,
+    "compactions": 0,
+    "subagents": 12,
+    "silentSubagents": 0,
+    "subagentsUnreceived": 0,
+    "stalls": 0
+  },
+  "params": {
+    "loopMin": 3,
+    "spikeTokens": 5000
+  },
+  "unavailable": [
+    "F10:cc",
+    "F13.completed:snapshot",
+    "F9:cc"
+  ]
+}

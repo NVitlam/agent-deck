@@ -941,3 +941,31 @@ describe('2026-09-28 — the post-payment page', () => {
     expect(THANKS).not.toContain('buy.polar.sh');
   });
 });
+
+describe('ruling of 2026-10-07 (16) — the "what you see" frame hugs its picture', () => {
+  /*
+   * `figure img` gives every page image `width:100%`. The tab panel's picture
+   * kept that width under `max-height:560px` with `object-fit:contain`, so a
+   * tall capture (the Deck, the Tree) was letterboxed inside a full-width
+   * framed box: the border and background sat well outside the picture. The
+   * rule now lets the image take its own width, capped at the panel's.
+   */
+  const shotRules = (html: string): string[] =>
+    [...html.matchAll(/(?:^|[}\s])\.shot img\{([^}]*)\}/g)].map((m) => m[1] ?? '');
+
+  it('index.html has exactly one .shot img rule: width:auto, max-width:100%, no object-fit', () => {
+    const rules = shotRules(PAGE);
+    expect(rules).toHaveLength(1);
+    const rule = rules[0] ?? '';
+    expect(rule).toContain('width:auto');
+    expect(rule).toContain('max-width:100%');
+    expect(rule).not.toContain('object-fit');
+  });
+
+  it('vacuity control: the 0.9.3 rule is refused, and the reader finds a rule', () => {
+    const old = '  .shot img{max-height:560px;object-fit:contain;object-position:top left}';
+    expect(shotRules(old)).toStrictEqual(['max-height:560px;object-fit:contain;object-position:top left']);
+    expect(shotRules(old)[0]).toContain('object-fit');
+    expect(shotRules(old)[0]).not.toContain('width:auto');
+  });
+});

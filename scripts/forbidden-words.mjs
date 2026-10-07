@@ -164,7 +164,25 @@ const DEFAULT_SCOPES = [
   // comments removed. The pages were rewritten to the rule, so the scope no
   // longer has to stop at a marked region.
   { kind: 'page', file: join(REPO_ROOT, 'site', 'index.html'), label: 'site/index.html (visible text)' },
-  { kind: 'page', file: join(REPO_ROOT, 'site', 'insights.html'), label: 'site/insights.html (visible text)' },
+  {
+    kind: 'page',
+    file: join(REPO_ROOT, 'site', 'insights.html'),
+    label: 'site/insights.html (visible text)',
+    // Ruling of 2026-10-07 (0.9.3.D, ruling 6 of the second set): the approved
+    // Insights intro keeps "fewer wasted tokens". ONE sentence, ONE word,
+    // matched on the whole visible text of its line rather than a line number,
+    // so any edit to the sentence brings the violation back. An exemption that
+    // matches nothing fails the run, so it cannot outlive its sentence.
+    exempt: [
+      {
+        word: 'waste',
+        text:
+          'Agent Deck Insights is an optional paid add-on. Your own Claude Code or Codex reads what ' +
+          'Agent Deck recorded and tells you what to change next time: fewer failed calls, less ' +
+          'waiting, fewer wasted tokens.',
+      },
+    ],
+  },
 ];
 
 /**
@@ -366,12 +384,18 @@ function main() {
   let skipped = 0;
   let literals = 0;
 
-  const scanUnits = (file, units) => {
+  const scanUnits = (file, units, exempt = []) => {
+    const used = new Set();
     for (const literal of units) {
       literals += 1;
       for (const { word, re } of PATTERNS) {
         const match = re.exec(literal.text);
         if (match === null) continue;
+        const hit = exempt.findIndex((e) => e.word === word && e.text === literal.text);
+        if (hit >= 0) {
+          used.add(hit);
+          continue;
+        }
         violations.push({
           file: relative(REPO_ROOT, file).split(sep).join('/'),
           line: literal.line,
@@ -381,6 +405,18 @@ function main() {
         });
       }
     }
+    exempt.forEach((e, index) => {
+      if (used.has(index)) return;
+      // A stale exemption is a violation in its own right: the sentence it
+      // names has changed or gone, and the exemption must go with it.
+      violations.push({
+        file: relative(REPO_ROOT, file).split(sep).join('/'),
+        line: 0,
+        word: e.word,
+        matched: '(stale exemption)',
+        literal: `exemption for "${e.word}" matched no line: ${e.text.slice(0, 80)}...`,
+      });
+    });
   };
 
   for (const scope of SCOPES) {
@@ -392,7 +428,7 @@ function main() {
         return;
       }
       scanned += 1;
-      scanUnits(scope.file, units);
+      scanUnits(scope.file, units, scope.exempt ?? []);
       continue;
     }
     if (scope.kind === 'region') {

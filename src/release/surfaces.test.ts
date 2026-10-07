@@ -167,17 +167,18 @@ describe('6.D.2 (a) — package.json, the CHANGELOG and the README state one ver
     expect(top).toBe(MANIFEST.version);
   });
 
-  it('the README states the manifest version once, in its version line', () => {
-    // Ruling of 2026-09-29: the redesigned page shows no version, so the
-    // statement moved to the README, word for word as the page had it.
-    const line = [...README.matchAll(/^VS Code extension · Open source · (\S+)$/gm)].map((m) => m[1]);
-    expect(line).toStrictEqual([MANIFEST.version]);
-    // Once in the whole README, as a whole version: `0.7.1` inside `0.7.10` or
-    // `10.7.1` is not a second statement of it.
+  it('the README states no version, the same rule as the page', () => {
+    // Ruling of 2026-10-07 (0.9.3.D), superseding 2026-09-29: the approved
+    // README top section carries no version line, so neither the README nor
+    // the page states a version, and neither can go stale. The CHANGELOG
+    // heading above is the one public statement beside the listing.
+    expect(README).not.toMatch(/^VS Code extension · Open source · /m);
+    // As a whole version: `0.7.1` inside `0.7.10` or `10.7.1` is not a
+    // statement of it.
     const whole = new RegExp(`(?<![\\d.])${escapeRegExp(MANIFEST.version)}(?![\\d.])`, 'g');
-    expect(README.match(whole) ?? []).toHaveLength(1);
-    // And the page no longer states one at all, so it cannot go stale.
+    expect(README.match(whole) ?? []).toHaveLength(0);
     expect(PAGE.match(whole) ?? []).toHaveLength(0);
+    expect(INSIGHTS_PAGE.match(whole) ?? []).toHaveLength(0);
     // Vacuity control: the pattern does find a version and does skip a longer one.
     expect('v 0.7.1 and 0.7.10'.match(/(?<![\d.])0\.7\.1(?![\d.])/g)).toHaveLength(1);
   });
@@ -417,6 +418,9 @@ describe('6.D.2 (c) — every image either page references exists, is non-empty,
     // attributes back would pass it.
     expect(imageSize(join(ROOT, 'media', 'icon.png'))?.width).toBeGreaterThan(0);
     expect(imageSize(join(ROOT, 'site', 'media', 'agent-deck-hero.gif'))).toStrictEqual({ width: 1100, height: 742 });
+    // 0.9.3.D: the README's hero is the same GIF, and its diagram is 2000 x 1158.
+    expect(imageSize(join(ROOT, 'media', 'agent-deck-hero.gif'))).toStrictEqual({ width: 1100, height: 742 });
+    expect(imageSize(join(ROOT, 'media', 'architecture.png'))).toStrictEqual({ width: 2000, height: 1158 });
     expect(imageSize(join(ROOT, 'media', 'activity-icon.svg'))).toBeNull();
     // Both pages' images are counted, not only the index's.
     expect(pageImages.length).toBe(3);
@@ -427,8 +431,21 @@ describe('6.D.2 (c) — every image either page references exists, is non-empty,
 // (d) listing fields
 // ---------------------------------------------------------------------------
 
-/** The five keywords the user locked (6.D brief). `manifest.test.ts` pins the whole list and its order. */
-const LOCKED_KEYWORDS = ['claude code', 'observability', 'agents', 'monitor', 'subagents'] as const;
+/**
+ * The keywords the user locked. 6.D locked five; the 0.9.3.D listing copy
+ * replaced the list with eight, and it is the whole approved list that is
+ * locked now. `manifest.test.ts` pins the same list and its length.
+ */
+const LOCKED_KEYWORDS = [
+  'observability',
+  'agents',
+  'subagents',
+  'ai agents',
+  'claude code',
+  'codex',
+  'opencode',
+  'monitor',
+] as const;
 
 describe('6.D.2 (d) — the listing is named after the product, not after an engine', () => {
   const leadsWithEngine = (text: string): boolean =>
@@ -871,7 +888,8 @@ describe('9.35 / 9.37 — the plans, on the index and on the Insights subpage', 
       'Agent Deck itself is unaffected: no feature moves behind a plan, and nothing it already does depends on Insights being installed.',
     );
     expect(INSIGHTS_PAGE).toContain('nothing in it moves behind a plan');
-    expect(PAGE).toContain('Nothing in it will ever move behind a paywall.');
+    // 0.9.3.D: the approved index says it in these words.
+    expect(PAGE).toContain('Agent Deck stays free.');
   });
 });
 

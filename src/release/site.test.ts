@@ -132,7 +132,13 @@ const SITE_IMAGES: readonly string[] = [
   'drawer-time.png',
   'sidebar-tweaks.png',
   'stats-tokens-timing.png',
+  // 0.9.3.D: the README's hero GIF is now the site's, so it is a twin like the
+  // stills. Its bytes stay pinned too, in HERO_GIF_SHA256 below.
+  'agent-deck-hero.gif',
 ];
+
+/** 0.9.3.D: the one hero GIF both README and page show (1100 x 742). */
+const HERO_GIF_SHA256 = '422a15583218485a21d6d108e8cac31b605d4d83ea9e4372c44f794536f485c3';
 
 /**
  * The site images with NO byte-identical `media/` twin, pinned by sha256 instead
@@ -143,13 +149,12 @@ const SITE_IMAGES: readonly string[] = [
  * does not show it. `insights-panel.png` was retired with the redesign, which
  * references it nowhere.
  *
- * `agent-deck-hero.gif` is the redesign's hero. Its `media/` counterpart is
- * still the previous GIF: the root swap ships with the next extension publish
- * (ruling of 2026-09-29), after which it can move to `SITE_IMAGES` as a twin.
+ * `agent-deck-hero.gif` was here until 0.9.3.D, when the root swap the ruling
+ * of 2026-09-29 deferred to the next publish happened and it moved to
+ * `SITE_IMAGES` as a twin.
  */
 const PINNED_IMAGES: Readonly<Record<string, string>> = {
   'insights-preview.png': 'd9c0767151a530cb8e60700a4412dff2d231ea895bad893d48c3b8e2914de034',
-  'agent-deck-hero.gif': '422a15583218485a21d6d108e8cac31b605d4d83ea9e4372c44f794536f485c3',
 };
 
 /**
@@ -241,7 +246,12 @@ describe('the page exists as a publishable tree', () => {
       expect(sha256(`site/media/${name}`), `site/media/${name} changed`).toBe(hash);
       expect(readFileSync(join(ROOT, `site/media/${name}`)).byteLength).toBeGreaterThan(1024);
     }
-    expect(Object.keys(PINNED_IMAGES)).toHaveLength(2);
+    expect(Object.keys(PINNED_IMAGES)).toHaveLength(1);
+  });
+
+  it('the hero GIF is the pinned bytes in both site/media and media (0.9.3.D)', () => {
+    expect(sha256('site/media/agent-deck-hero.gif')).toBe(HERO_GIF_SHA256);
+    expect(sha256('media/agent-deck-hero.gif')).toBe(HERO_GIF_SHA256);
   });
 
   it('every site image is byte-identical to its media/ twin', () => {
@@ -463,7 +473,15 @@ describe('v0.7.0 DoD 5.5 — the page names the Stats view, and no longer says n
     expect(scanner).toContain("file: join(REPO_ROOT, 'README.md'),\n    start: '<!-- g10 -->'");
     // ...and, since the same ruling, both redesigned pages' whole visible text.
     expect(scanner).toContain("{ kind: 'page', file: join(REPO_ROOT, 'site', 'index.html')");
-    expect(scanner).toContain("{ kind: 'page', file: join(REPO_ROOT, 'site', 'insights.html')");
+    // insights.html's scope is written out over several lines since 0.9.3.D,
+    // because it carries the one exemption the ruling of 2026-10-07 granted.
+    expect(scanner).toContain("kind: 'page',\n    file: join(REPO_ROOT, 'site', 'insights.html'),");
+    // Exactly ONE exemption in the whole scanner: one `exempt:` array, holding
+    // one entry, however the entries are laid out.
+    expect(scanner.match(/\bexempt: \[/g) ?? []).toHaveLength(1);
+    const exemptArray = /\bexempt: \[([\s\S]*?)\n\s*\],/.exec(scanner)?.[1] ?? '';
+    expect(exemptArray.match(/\bword:/g) ?? []).toHaveLength(1);
+    expect(exemptArray).toContain("word: 'waste'");
   });
 
   it('no longer claims the product keeps nothing, which 0.7.0 made false', () => {
@@ -821,12 +839,41 @@ describe('ruling of 2026-09-29 — the author credit is in the footer, and nowhe
     expect(author.split(' ')).toHaveLength(2);
   });
 
+  /*
+   * ONE further exemption, by the ruling of 2026-10-07 (0.9.3.D, ruling 4 of
+   * the second set): index.html's founder quote cites its author. It is
+   * allowed as that exact citation, inside `<blockquote class="founder">`,
+   * exactly once — any other mention, on either page, is still refused.
+   */
+  const founderCitation = (html: string): string => {
+    const quote = /<blockquote class="founder">[\s\S]*?<\/blockquote>/.exec(html)?.[0] ?? '';
+    const cite = `<cite>${author}, creator</cite>`;
+    return quote.includes(cite) ? quote : '';
+  };
+  const ALLOWED_CITATION: Readonly<Record<string, boolean>> = { 'index.html': true, 'insights.html': false };
+
   it.each(['index.html', 'insights.html'])('%s names the author in its footer only', (name) => {
     const html = PAGES[name] ?? '';
     expect(footerOf(html)).toContain(author);
-    const outside = html.replace(footerOf(html), '');
+    let outside = html.replace(footerOf(html), '');
+    if (ALLOWED_CITATION[name] === true) {
+      const quote = founderCitation(html);
+      expect(quote, `${name} has no founder quote citing ${author}`).not.toBe('');
+      expect(outside.split(quote)).toHaveLength(2);
+      // The citation is the only mention inside the quote, and it is removed
+      // with the quote: the quote's own words may not name the author.
+      expect(quote.split(author)).toHaveLength(2);
+      outside = outside.replace(quote, '');
+    }
     expect(outside.length).toBeGreaterThan(1000);
     expect(outside.toLowerCase()).not.toContain(author.toLowerCase());
+  });
+
+  it('vacuity control: the founder-quote exemption takes only the exact citation', () => {
+    const cite = `<cite>${author}, creator</cite>`;
+    expect(founderCitation(`<blockquote class="founder"><p>x</p>${cite}</blockquote>`)).not.toBe('');
+    expect(founderCitation(`<blockquote class="founder"><p>x</p><cite>${author}</cite></blockquote>`)).toBe('');
+    expect(founderCitation(`<blockquote><p>x</p>${cite}</blockquote>`)).toBe('');
   });
 
   it('thanks.html and site.js do not name the author at all', () => {

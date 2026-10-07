@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Agent Deck · Live view of your coding agents in VS Code</title>
-<meta name="description" content="Every session, every agent inside it, what each one is running, and what it has cost. Live, inside VS Code. Claude Code, Codex and OpenCode. Read-only, zero network calls.">
+<title>Agent Deck · A live tree of your AI coding agents in VS Code</title>
+<meta name="description" content="Agent Deck is a free VS Code extension that draws a live tree of every agent and every tool call, as they work. Claude Code, Codex and OpenCode. Read-only, nothing leaves your machine.">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'self'; base-uri 'none'; form-action 'none'">
 <style>
   :root{
@@ -144,12 +144,8 @@
   .tabs button[aria-selected="true"]{color:var(--text)}
   .tabs button:hover strong{color:var(--text)}
   .tabs button:focus-visible{outline:2px solid var(--accent-2);outline-offset:-2px}
-  .shot{min-width:0;width:100%;aspect-ratio:1638/1998;max-height:560px;display:grid;place-items:center;container-type:size}
-  .shot .frame{display:block;overflow:hidden;border-radius:var(--r);border:1px solid var(--line-2);background:var(--bg-2)}
-  .shot img{width:auto;height:auto;max-width:calc(100cqw - 2px);max-height:calc(100cqh - 2px);border:0;border-radius:0;background:none}
-  [data-depth] .shot img{border-radius:0;box-shadow:none}
-  [data-depth] .shot .frame{border-radius:10px;box-shadow:var(--lift-big)}
-  [data-depth="2"] .shot .frame,[data-depth="3"] .shot .frame{box-shadow:var(--lift-big2)}
+  .shot{min-width:0}
+  .shot img{max-height:560px;object-fit:contain;object-position:top left}
   .also{margin-top:28px}
 
   .quotes{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:24px}
@@ -187,7 +183,7 @@
   .livechip::before{content:'';width:7px;height:7px;border-radius:50%;background:#5a9e5f;animation:pulse 2s ease-in-out infinite}
   .maker{display:inline-flex;align-items:center;gap:10px;color:var(--text-2)}
   .maker:hover{text-decoration:none;color:var(--text)}
-  .nv{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:4px;background:#f2efe9;font-family:var(--font-display);font-weight:700;font-size:.8rem;letter-spacing:-.02em;line-height:1}
+  .nv{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;width:28px;height:28px;border-radius:4px;background:#f2efe9;font-family:var(--font-display);font-weight:700;font-size:.8rem;letter-spacing:-.02em;line-height:1}
   .nv b{color:#1a4e9f}.nv i{font-style:normal;color:#8b3214}
   /* ===== depth layer (on when html has data-depth) ===== */
   :root{--lift:0 24px 60px -24px rgba(0,0,0,.65),0 2px 8px rgba(0,0,0,.28);--lift-big:0 50px 100px -40px rgba(0,0,0,.8),0 8px 24px rgba(0,0,0,.35);--rim:inset 0 1px 0 rgba(255,255,255,.07);--deep:#10151f;--panel-top:#232c42}
@@ -272,8 +268,30 @@
   :root:root:root{--gold:#b2a7e0;--gold-2:#cac3ed;--gold-soft:rgba(178,167,224,.10);--gold-line:rgba(178,167,224,.40)}
   @media (prefers-color-scheme:light){:root:root:root:not([data-theme="dark"]){--gold:#6e3387;--gold-2:#542768;--gold-soft:rgba(110,51,135,.07);--gold-line:rgba(110,51,135,.38)}}
   :root:root:root[data-theme="light"]{--gold:#6e3387;--gold-2:#542768;--gold-soft:rgba(110,51,135,.07);--gold-line:rgba(110,51,135,.38)}
-  .hero-fig{margin-top:48px}
-  .more{margin-top:20px}
+
+  /* architecture diagram */
+  .dgfig{margin-top:28px;border:1px solid var(--line);border-radius:10px;background:linear-gradient(180deg,var(--panel-top,var(--bg-3)),var(--bg-2));padding:16px;overflow-x:auto;box-shadow:var(--rim,none),var(--lift2,none)}
+  .dgfig svg{display:block;width:100%;min-width:640px;height:auto;color:var(--text)}
+  .dg-box{fill:var(--panel-top,var(--bg-3));stroke:var(--line-2)}
+  .dg-zone{fill:none;stroke:var(--line-2);stroke-dasharray:6 6}
+  .dg-vs{fill:var(--bg-2);stroke:var(--line-2)}
+  .dg-deck{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.6}
+  .dg-chip{fill:var(--panel-top,var(--bg-3));stroke:var(--accent)}
+  .dg-t{fill:var(--text);font-family:var(--font-body);font-size:15px;font-weight:600}
+  .dg-t2{fill:var(--text-2);font-family:var(--font-body);font-size:12.5px}
+  .dg-m{fill:var(--text-3);font-family:var(--font-mono);font-size:11.5px}
+  .dg-ma{fill:var(--accent);font-family:var(--font-mono);font-size:12px}
+  .dg-mn{fill:var(--red);font-family:var(--font-mono);font-size:12px}
+  .dg-ttl{fill:var(--accent);font-family:var(--font-display);font-size:20px;font-weight:700}
+  .dg-arr{stroke:currentColor;stroke-width:1.6;fill:none}
+  .dg-arra{stroke:var(--accent);stroke-width:1.8;fill:none}
+  .dg-dash{stroke-dasharray:5 5}
+  .dg-noline{stroke:var(--red);stroke-width:1.6;stroke-dasharray:4 4;fill:none}
+  .founder{margin-top:22px;padding-left:18px;border-left:2px solid var(--accent);max-width:60ch}
+  .founder p{color:var(--text);font-size:1.1rem;line-height:1.5}
+  .founder cite{display:block;margin-top:6px;font-style:normal;font-family:var(--font-mono);font-size:.74rem;color:var(--text-3)}
+  .spec .k.no{color:var(--red)}
+  .mt-14{margin-top:14px}.mt-20{margin-top:20px}.mt-48{margin-top:48px}
 </style>
 </head>
 <body>
@@ -282,6 +300,7 @@
     <a class="brand" href="#top"><i class="led"></i>agent-deck</a>
     <div class="links">
       <a href="#see">what you see</a>
+      <a href="#where">where it sits</a>
       <a class="keep" href="#insights">insights</a>
       <a href="#install">install</a>
       <a class="keep" href="https://github.com/NVitlam/agent-deck">github ↗</a>
@@ -294,13 +313,13 @@
     <div class="wrap">
       <div class="herotext"><div class="status"><span class="on">live</span><i>·</i><span>Claude Code · Codex · OpenCode</span><i>·</i><span>0 network calls</span></div>
       <h1>See what your coding agents are doing. <span class="hl">Right now.</span></h1>
-      <p class="sub">Every session, every agent inside it, what each one is running, and what it has cost. Live, inside VS Code.</p>
+      <p class="sub">Agent Deck is a free VS Code extension that draws a live tree of every agent and every tool call, as they work. Claude Code, Codex and OpenCode.</p>
       <div class="cta">
         <a class="btn solid" href="https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck">Install free <span class="arr">→</span></a>
         <span class="livechip">live on the VS Code Marketplace</span>
       </div>
       </div>
-      <figure class="hero-fig">
+      <figure class="mt-48">
         <img src="media/agent-deck-hero.gif" width="1100" height="742" alt="Agent Deck drawing a live tree as one session spawns 4 lead agents, each spawning 2 workers">
         <figcaption class="cap"><span>live capture · real session</span><span>1 session → 4 leads → 8 workers</span></figcaption>
       </figure>
@@ -309,16 +328,29 @@
 
   <div class="wrap">
     <div class="facts">
+      <div><span class="k">live</span><strong>Live, not after the fact.</strong><p>It updates while your agents work, not when the session ends.</p></div>
       <div><span class="k">read-only</span><strong>It watches. It never touches.</strong><p>Never starts, steers or changes your agents or their settings.</p></div>
-      <div><span class="k">zero egress</span><strong>Your data stays home.</strong><p>No telemetry, no analytics, no network calls. The stats history stays on your machine.</p></div>
-      <div><span class="k">MIT</span><strong>Free, for real.</strong><p>Open source. Nothing in it will ever move behind a paywall.</p></div>
+      <div><span class="k">0 network calls</span><strong>Nothing leaves your machine.</strong><p>No telemetry, no cloud, no account. Free and open source (MIT).</p></div>
     </div>
   </div>
 
   <section class="wrap block">
+    <div class="label"><b>~/what-is-it</b></div>
+    <h2>Live observability for AI coding agents.</h2>
+    <p class="intro">In plain words: a live tree of your agents and their tool calls, right inside VS Code.</p>
+    <ul class="spec">
+      <li><span class="k">vs code extension</span><span class="v">Free and open source (MIT). Install it from the VS Code Marketplace.</span></li>
+      <li><span class="k">works with</span><span class="v">Claude Code, Codex and OpenCode. You run them as usual; Agent Deck only watches, and shows their sessions side by side in one panel.</span></li>
+      <li><span class="k">session files</span><span class="v">Reads the files your agents already write to your disk as they work.</span></li>
+      <li><span class="k">hooks</span><span class="v">Optional. Claude Code and Codex hooks ping it on 127.0.0.1 when an agent starts or a tool finishes. You paste them in yourself.</span></li>
+    </ul>
+  </section>
+
+  <section class="wrap block">
     <div class="label"><b>~/problem</b></div>
     <h2>Your agents work in parallel. Your terminal shows one line at a time.</h2>
-    <p class="intro">Subagents spawn, tools run, tokens burn, and all you get is scroll. Agent Deck turns it into one picture you can read at a glance.</p>
+    <p class="intro">Give Claude Code or Codex a big task and it splits the work across several agents running in parallel. In the terminal you can barely see who's doing what, who's stuck, or why it's taking 10 minutes. The logs exist, but as raw files nobody reads while the work is running.</p>
+    <blockquote class="founder"><p>"I built Agent Deck because I couldn't understand what was running on my own machine."</p><cite>Nadav Vitlam, creator</cite></blockquote>
   </section>
 
   <section class="wrap block" id="see">
@@ -331,12 +363,116 @@
         <li><button role="tab" id="t-insp" aria-selected="false" data-img="media/inspector.png" data-alt="The inspector: a tool call expanded to its input and output"><span class="n">03</span><span class="d"><strong>Inspector</strong>Open any call: what went in, what came out, how long it took.</span></button></li>
         <li><button role="tab" id="t-stats" aria-selected="false" data-img="media/stats_tokens.png" data-alt="The Stats view: cost and tokens per agent"><span class="n">04</span><span class="d"><strong>Stats</strong>Files and tools each session hammered, loops, and tokens over time.</span></button></li>
       </ul>
-      <figure class="shot" role="tabpanel" aria-live="polite"><span class="frame"><img id="shot" src="media/deck.png" width="1638" height="1998" alt="The deck: one card per live session"></span></figure>
+      <figure class="shot" role="tabpanel" aria-live="polite"><img id="shot" src="media/deck.png" width="1638" height="1998" alt="The deck: one card per live session"></figure>
     </div>
     <ul class="spec also">
       <li><span class="k">stalled</span><span class="v"><strong>Stuck agents, spotted.</strong>A call silent for too long turns amber. When an agent is waiting for your answer, it says so.</span></li>
       <li><span class="k">cost.source</span><span class="v"><strong>Every cost names its source.</strong>The agent's own figure, or your own prices. No guessed price tables.</span></li>
     </ul>
+  </section>
+
+
+  <section class="wrap block" id="where">
+    <div class="label"><b>~/where-it-sits</b></div>
+    <h2>On the side, reading. Never in the way.</h2>
+    <p class="intro">Agent Deck isn't in your terminal and isn't between your agent and the API. It reads the files your agent already writes, listens to hooks, and draws what it reads.</p>
+    <figure class="dgfig">
+      <svg viewBox="0 0 960 540" role="img" aria-label="Your coding agent talks to its AI provider and writes session files to your disk. Agent Deck, inside VS Code, reads those files and optionally receives hook signals on 127.0.0.1. It never touches API traffic, never writes to the agent, and sends nothing off your machine.">
+      <defs>
+        <marker id="dgah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker>
+        <marker id="dgaha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--accent)"/></marker>
+      </defs>
+
+      <!-- outside the machine -->
+      <rect class="dg-box" x="60" y="20" width="240" height="58" rx="8"/>
+      <text class="dg-t" x="180" y="46" text-anchor="middle">Your AI provider</text>
+      <text class="dg-t2" x="180" y="65" text-anchor="middle">over the internet, on your account</text>
+
+      <!-- machine boundary -->
+      <rect class="dg-zone" x="20" y="120" width="920" height="400" rx="14"/>
+      <text class="dg-m" x="40" y="142">your machine</text>
+
+      <!-- agent -->
+      <rect class="dg-box" x="60" y="170" width="240" height="84" rx="8"/>
+      <text class="dg-t" x="180" y="204" text-anchor="middle">Your coding agent</text>
+      <text class="dg-t2" x="180" y="228" text-anchor="middle">Claude Code · Codex · OpenCode</text>
+
+      <!-- agent <-> provider -->
+      <line class="dg-arr" x1="180" y1="168" x2="180" y2="82" marker-start="url(#dgah)" marker-end="url(#dgah)"/>
+      <text class="dg-m" x="192" y="106">prompts &amp; replies</text>
+      <text class="dg-mn" x="192" y="160">✕ Agent Deck is not on this path</text>
+
+      <!-- session files -->
+      <rect class="dg-box" x="60" y="380" width="240" height="104" rx="8"/>
+      <text class="dg-t" x="180" y="412" text-anchor="middle">Session files</text>
+      <text class="dg-t2" x="180" y="434" text-anchor="middle">on your disk, written as it works</text>
+      <text class="dg-m" x="180" y="460" text-anchor="middle">~/.claude · ~/.codex · OpenCode</text>
+
+      <!-- agent -> files -->
+      <line class="dg-arr" x1="180" y1="256" x2="180" y2="376" marker-end="url(#dgah)"/>
+      <text class="dg-m" x="192" y="322">writes every step</text>
+
+      <!-- VS Code -->
+      <rect class="dg-vs" x="440" y="160" width="480" height="336" rx="10"/>
+      <text class="dg-m" x="460" y="182">VS Code</text>
+
+      <!-- Agent Deck -->
+      <rect class="dg-deck" x="470" y="200" width="420" height="270" rx="10"/>
+      <circle cx="500" cy="236" r="6" fill="var(--accent)"/>
+      <text class="dg-ttl" x="516" y="243">Agent Deck</text>
+      <text class="dg-t2" x="490" y="274">a live tree of your agents and their tool calls</text>
+      <rect class="dg-chip" x="490" y="300" width="88" height="34" rx="6"/><text class="dg-ma" x="534" y="322" text-anchor="middle">Deck</text>
+      <rect class="dg-chip" x="588" y="300" width="88" height="34" rx="6"/><text class="dg-ma" x="632" y="322" text-anchor="middle">Tree</text>
+      <rect class="dg-chip" x="686" y="300" width="88" height="34" rx="6"/><text class="dg-ma" x="730" y="322" text-anchor="middle">Inspector</text>
+      <rect class="dg-chip" x="784" y="300" width="88" height="34" rx="6"/><text class="dg-ma" x="828" y="322" text-anchor="middle">Stats</text>
+      <text class="dg-m" x="490" y="372">who spawned whom · what runs now</text>
+      <text class="dg-m" x="490" y="392">time · tokens · cost · who is stuck</text>
+      <text class="dg-m" x="490" y="440">stats history stays local, you can clear it</text>
+
+      <!-- hooks: agent -> deck (optional) -->
+      <line class="dg-arra dg-dash" x1="302" y1="212" x2="466" y2="236" marker-end="url(#dgaha)"/>
+      <text class="dg-ma" x="312" y="196">hooks · optional</text>
+      <text class="dg-m" x="318" y="248">"agent started"</text>
+      <text class="dg-m" x="318" y="264">"tool finished"</text>
+      <text class="dg-m" x="318" y="280">on 127.0.0.1 only</text>
+
+      <!-- files -> deck (read) -->
+      <line class="dg-arra" x1="302" y1="428" x2="466" y2="428" marker-end="url(#dgaha)"/>
+      <text class="dg-ma" x="312" y="418">reads · read-only</text>
+
+      <!-- never: nothing leaves -->
+      <line class="dg-noline" x1="830" y1="198" x2="830" y2="128"/>
+      <text class="dg-mn" x="830" y="112" text-anchor="middle">✕ nothing leaves your machine</text>
+    </svg>
+      <figcaption class="cap"><span>solid blue: reads · dashed blue: optional hooks · red ✕: never</span></figcaption>
+    </figure>
+    <ul class="spec">
+      <li><span class="k">reads</span><span class="v">The session files your agent already writes to disk, as they grow. Read-only.</span></li>
+      <li><span class="k">listens</span><span class="v">Optional hook signals you paste into your agent's settings, sent to 127.0.0.1 only.</span></li>
+      <li><span class="k no">never</span><span class="v">Sits in the API path, wraps or steers your agent, writes to its files, or sends anything out.</span></li>
+    </ul>
+  </section>
+
+  <section class="wrap block">
+    <div class="label"><b>~/who-its-for</b></div>
+    <h2>For developers who hand agents long tasks.</h2>
+    <p class="intro">Solo developers and small teams who give Claude Code, Codex or OpenCode long tasks with subagents. It isn't a management dashboard and it isn't enterprise monitoring.</p>
+    <ul class="spec">
+      <li><span class="k">seeing first</span><span class="v">The point is seeing what's happening: who's working, who's stuck, where the time goes.</span></li>
+      <li><span class="k">tokens second</span><span class="v">Tokens and cost are shown too. Even on a subscription they help you stay inside your usage limits.</span></li>
+    </ul>
+  </section>
+
+  <section class="wrap block">
+    <div class="label"><b>~/why-agent-deck</b></div>
+    <h2>Most tools look back. Agent Deck watches live.</h2>
+    <ul class="spec">
+      <li><span class="k">ccusage</span><span class="v">Sums up usage after the session ends.</span></li>
+      <li><span class="k">claude-code-log</span><span class="v">Turns finished transcripts into HTML.</span></li>
+      <li><span class="k">official extension</span><span class="v">Claude Code's VS Code extension runs Claude Code inside the editor. It doesn't show an agent tree.</span></li>
+      <li><span class="k">agent-deck</span><span class="v"><strong>The agent tree, live, while it runs.</strong>Read-only, no network.</span></li>
+    </ul>
+    <p class="fine mt-14">As far as I know, no other tool shows the agent tree live, read-only and with no network.</p>
   </section>
 
   <section class="wrap block">
@@ -345,14 +481,14 @@
       <blockquote><p>“Agent Deck fixes the endless terminal scroll.”</p><cite>Nir Tituani</cite></blockquote>
       <blockquote><p>“It feels like getting a bird's-eye view of the entire environment.”</p><cite>Alex k</cite></blockquote>
     </div>
-    <p class="fine more"><a href="https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck&amp;ssr=false#review-details">read all reviews →</a></p>
+    <p class="fine mt-20"><a href="https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck&amp;ssr=false#review-details">read all reviews →</a></p>
   </section>
 
   <section class="wrap block" id="insights">
     <div class="teaser">
       <div>
-        <h3>Want to know why a session cost what it did?</h3>
-        <p>Agent Deck Insights reads how your agents actually worked and tells you what to change next time. Optional and paid. Agent Deck stays free.</p>
+        <h3>Want to know what to change next time?</h3>
+        <p>Agent Deck Insights is optional and paid. Your own Claude Code or Codex reads the stats Agent Deck collected and tells you what to change. Agent Deck stays free.</p>
       </div>
       <a class="btn" href="insights.html">See Insights <span class="arr">→</span></a>
       <div class="line"><i>example finding →</i> Split long phases into shorter sessions, handing over through a written file.</div>
@@ -373,9 +509,12 @@
   <section class="wrap block">
     <div class="label"><b>~/faq</b></div>
     <div class="faq">
+      <details><summary>What does "observability" mean here?</summary><p>Not OpenTelemetry. It's closest to live traces: a tree of agents and tool calls, with the time and token count on each one. There's no log export and no Grafana metrics. It's a local, live viewer, not monitoring infrastructure.</p></details>
+      <details><summary>Is this about saving tokens?</summary><p>Mostly not. The main point is seeing what's happening. Tokens and cost are shown, and they help with usage limits, but they come second.</p></details>
       <details><summary>Can it control my agents?</summary><p>No. It only watches.</p></details>
       <details><summary>Does it send my data anywhere?</summary><p>No. It makes no network calls at all.</p></details>
       <details><summary>Why do I paste the hook myself?</summary><p>Because read-only includes your settings. Agent Deck never writes to them.</p></details>
+      <details><summary>What are the limits?</summary><p>The session file format is undocumented and changes between versions. When it changes, Agent Deck refuses to draw rather than guess, so an agent update can break it until I fix it. It's a one-person project, and it's early.</p></details>
       <details><summary>Which versions does it support?</summary><p>See the <a href="https://github.com/NVitlam/agent-deck#readme">compatibility details in the README</a>.</p></details>
     </div>
   </section>

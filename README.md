@@ -1,20 +1,33 @@
 # Agent Deck
 
-[Agent Deck on the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck)
+**See what your AI coding agents are doing. Right now.**
 
-VS Code extension · Open source · 0.9.2
+Agent Deck is a free VS Code extension that draws a live tree of every agent and every tool call, as they work.
 
-**Live observability for agent swarms, inside VS Code.** When a coding agent spawns subagents, the
-terminal shows you one scrolling column and no shape. Agent Deck shows you the shape: every session
-on the machine, the tree of agents inside each one, which agent spawned which, what each is running
-right now, and what it has cost. It works with **Claude Code**, **OpenCode** and **Codex**, side by
-side in one panel. It observes only — it never wraps, launches, proxies or configures any of them.
+![Agent Deck drawing a live tree as one session spawns 4 lead agents and 8 workers](media/agent-deck-hero.gif)
 
-It also keeps the facts: which files a session touched, which calls it repeated, how its tokens
-moved, in a [Stats](#stats) view and a local history on your machine — numbers, never session
-content, and never advice.
+## What is it?
+- **Live observability for AI coding agents.** In plain words: a live tree of your agents and their tool calls.
+- **Works with Claude Code, Codex and OpenCode.** You run them as usual. Agent Deck only watches.
+- **Reads the files your agents already write** to your disk. Optional hooks make it instant.
+- **Read-only.** It never starts, steers or changes your agents or their settings.
+- **Nothing leaves your machine.** No telemetry, no cloud, no account. Free and open source (MIT).
 
-![Agent Deck: one panel, the sessions of the folders this window has open, live](media/agent-deck-hero.gif)
+## Why I built it
+Give Claude Code or Codex a big task and it splits the work across several agents running in parallel. In the terminal you can barely see who's doing what, who's stuck, or why it's taking 10 minutes. I built Agent Deck because I couldn't understand what was running on my own machine.
+
+## Where it sits
+![Agent Deck reads session files and optional hooks; it is never in the API path and sends nothing out](media/architecture.png)
+
+## Who it's for
+Developers who hand Claude Code, Codex or OpenCode long tasks with subagents. Seeing what's happening comes first. Tokens and cost are shown too.
+
+## Install
+1. Install Agent Deck from the Marketplace.
+2. Click the Agent Deck icon in the sidebar.
+3. Optional: paste the hook block below for second-by-second updates.
+
+More at **[agent-deck.app](https://agent-deck.app)**. Everything technical is below.
 
 > **Claude Code compatibility** — anchor `2.1.246`, accepts `2.0.x` to `2.2.x`, refuses on
 > structural change, not on patch number. **A session imported from another machine — Claude
@@ -1011,10 +1024,9 @@ provider returns for that run at that moment, checked as above. Agent Deck refus
 export into a directory it only reads — `~/.claude`, the Claude Code projects directory, the Codex
 directory or OpenCode's data directory — and says so. Exporting makes no network call.
 
-**Agent Deck Insights** is a separate extension that registers as that provider. **Agent Deck has
-no knowledge of your Insights licence** — Insights registers only once it has checked its own
-licence, and Agent Deck only asks whether a provider is registered. Whether Insights is installed
-is never consulted, and the sidebar states the same thing whether or not the panel is open.
+**Agent Deck Insights** is a separate extension that registers as that provider. **Agent Deck only
+asks whether a provider is registered.** Whether Insights is installed is never consulted, and the
+sidebar states the same thing whether or not the panel is open.
 
 ## About
 

@@ -2,6 +2,12 @@
 
 All notable changes to Agent Deck are documented here.
 
+## 0.9.3 - 2026-10-07 - Listing copy
+
+### Changed
+
+- Docs: new site, README and Marketplace listing copy; architecture diagram.
+
 ## 0.9.2 - 2026-09-29 - Subagents arriving half written
 
 ### Fixed

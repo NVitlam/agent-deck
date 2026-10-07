@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Agent Deck Insights · Why your agent sessions cost what they cost</title>
-<meta name="description" content="Agent Deck Insights reads how your agents actually worked and tells you what to change next time. Runs on your own Claude Code or Codex. Licence checked offline.">
+<title>Agent Deck Insights · Find out what slowed your agents down</title>
+<meta name="description" content="An optional add-on for Agent Deck. Your own Claude Code or Codex reads what Agent Deck recorded and tells you what to change next time.">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'self'; base-uri 'none'; form-action 'none'">
 <style>
   :root{
@@ -177,9 +177,9 @@
   .prices .row:last-child{border-bottom:0}
   .prices .head{background:var(--gold-soft);font-family:var(--font-mono);font-size:.7rem;color:var(--text-2);letter-spacing:.06em;text-transform:uppercase;padding-block:10px}
   .prices .head small{display:block;text-transform:none;letter-spacing:0;color:var(--text-3);font-size:.7rem}
-  .prices .term{font-weight:600;color:var(--text);display:flex;align-items:center;justify-content:center;text-align:center}
-  .prices .price{font-family:var(--font-display);font-size:1.6rem;font-weight:700;color:var(--gold-2);font-variant-numeric:tabular-nums;display:flex;align-items:center;justify-content:center;text-align:center}
-  .prices .btn{justify-content:center;width:100%;padding:10px 14px;font-size:.8rem;text-align:center}
+  .prices .term{font-weight:600;color:var(--text)}
+  .prices .price{font-family:var(--font-display);font-size:1.6rem;font-weight:700;color:var(--gold-2);font-variant-numeric:tabular-nums}
+  .prices .btn{justify-content:center;width:100%;padding:10px 14px;font-size:.8rem}
   .prices .btn .m{display:none}
   .small{display:grid;gap:4px;margin-top:16px}
 
@@ -207,7 +207,7 @@
   .livechip::before{content:'';width:7px;height:7px;border-radius:50%;background:#5a9e5f;animation:pulse 2s ease-in-out infinite}
   .maker{display:inline-flex;align-items:center;gap:10px;color:var(--text-2)}
   .maker:hover{text-decoration:none;color:var(--text)}
-  .nv{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:4px;background:#f2efe9;font-family:var(--font-display);font-weight:700;font-size:.8rem;letter-spacing:-.02em;line-height:1}
+  .nv{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;width:28px;height:28px;border-radius:4px;background:#f2efe9;font-family:var(--font-display);font-weight:700;font-size:.8rem;letter-spacing:-.02em;line-height:1}
   .nv b{color:#1a4e9f}.nv i{font-style:normal;color:#8b3214}
   /* ===== depth layer (on when html has data-depth) ===== */
   :root{--lift:0 24px 60px -24px rgba(0,0,0,.65),0 2px 8px rgba(0,0,0,.28);--lift-big:0 50px 100px -40px rgba(0,0,0,.8),0 8px 24px rgba(0,0,0,.35);--rim:inset 0 1px 0 rgba(255,255,255,.07);--deep:#10151f;--panel-top:#232c42}
@@ -287,7 +287,7 @@
   @keyframes float{to{transform:translateY(-70px)}}
   @keyframes rise{from{opacity:.4;transform:translateY(40px) scale(.97)}to{opacity:1;transform:none}}
   @keyframes rise-sm{from{opacity:.3;transform:translateX(-14px)}to{opacity:1;transform:none}}
-  .preview-fig{margin-top:28px;max-width:620px}
+  .preview{margin-top:28px;max-width:620px}
 </style>
 </head>
 <body>
@@ -308,9 +308,9 @@
   <div class="hero">
     <div class="wrap grid">
       <div>
-        <div class="status"><span class="on">evidence-linked</span><i>·</i><span>runs on your agent</span><i>·</i><span>licence checked offline</span></div>
-        <h1>Find out why your sessions <span class="hl">cost what they cost.</span></h1>
-        <p class="sub">Agent Deck Insights reads how your agents actually worked and tells you what to change next time. See where your tokens go. Less waiting, fewer failed calls.</p>
+        <div class="status"><span class="on">optional add-on</span><i>·</i><span>runs on your own agent</span><i>·</i><span>no account</span></div>
+        <h1>Find out what slowed your agents down. <span class="hl">And what to change.</span></h1>
+        <p class="sub">Agent Deck Insights is an optional paid add-on. Your own Claude Code or Codex reads what Agent Deck recorded and tells you what to change next time: fewer failed calls, less waiting, fewer wasted tokens.</p>
         <div class="cta">
           <a class="btn solid" href="#plans">See plans · from $10 <span class="arr">→</span></a>
           <span class="fine">needs Agent Deck (free) + Claude Code or Codex</span>
@@ -335,20 +335,31 @@
 
   <div class="wrap">
     <div class="facts">
-      <div><span class="k">evidence</span><strong>Advice you can check.</strong><p>Every finding shows the exact numbers behind it, and how sure it is.</p></div>
-      <div><span class="k">your agent</span><strong>Runs on what you already use.</strong><p>Claude Code or Codex writes the report, on your own account.</p></div>
-      <div><span class="k">no server</span><strong>We never see your data.</strong><p>No account, no uploads to us. Your licence is checked on your machine.</p></div>
+      <div><span class="k">one click</span><strong>Runs when you ask.</strong><p>Never in the background. You see exactly what will be sent first.</p></div>
+      <div><span class="k">your agent</span><strong>Runs on what you already use.</strong><p>Your Claude Code or Codex writes the report, on your own account.</p></div>
+      <div><span class="k">no server</span><strong>We never see your data.</strong><p>No account, no uploads to us.</p></div>
     </div>
   </div>
 
+  <section class="wrap block" id="what">
+    <div class="label"><b>~/what-is-it</b></div>
+    <h2>Agent Deck shows what happened. Insights explains it.</h2>
+    <p class="intro">Insights doesn't run any AI of its own. It hands the numbers Agent Deck already recorded to the Claude Code or Codex you already use, and shows you what comes back.</p>
+    <ul class="spec">
+      <li><span class="k">you get</span><span class="v">A report. Each finding gives one action, the cause, and the exact numbers behind it.</span></li>
+      <li><span class="k">over time</span><span class="v">Each finding is marked new, still happening, or fixed since your last report.</span></li>
+      <li><span class="k">it costs</span><span class="v">Your plan, plus a little of your own Claude Code or Codex usage for each report.</span></li>
+    </ul>
+  </section>
+
   <section class="wrap block" id="finds">
     <div class="label"><b>~/what-it-finds</b></div>
-    <h2>The habits that quietly burn tokens and time.</h2>
+    <h2>The habits that slow your agents down.</h2>
     <ul class="spec">
       <li><span class="k">re-read loop</span><span class="v">The same file read again and again, with nothing changed in between.</span></li>
       <li><span class="k">churn chain</span><span class="v">Edit, fail, edit again on the same file, and the failed calls in between.</span></li>
       <li><span class="k">context churn</span><span class="v">A huge tool result or a cold cache that suddenly makes every turn expensive.</span></li>
-      <li><span class="k">long session</span><span class="v">One agent running so long that every turn resends a growing pile of context.</span></li>
+      <li><span class="k">compaction</span><span class="v">The conversation was summarised to free up context, so earlier detail was summarised away.</span></li>
       <li><span class="k">silent subagent</span><span class="v">Subagents that did nothing, or whose results were never used.</span></li>
       <li><span class="k">stall</span><span class="v">Commands that block your agent for minutes, and waits nobody noticed.</span></li>
     </ul>
@@ -364,7 +375,6 @@
       <div><span class="k">findings</span><p>One clear action per finding, with its cause and evidence.</p></div>
     </div>
     <ul class="spec">
-      <li><span class="k">since last run</span><span class="v">Each finding is marked new, still happening, or fixed, so you can see what changed.</span></li>
       <li><span class="k">investigate</span><span class="v">Open a follow-up session in your agent and ask about any finding.</span></li>
       <li><span class="k">export</span><span class="v">Save any report as HTML, Markdown or plain text.</span></li>
     </ul>
@@ -375,13 +385,13 @@
     <h2>Built by the same rules as Agent Deck.</h2>
     <div class="two">
       <div class="yes"><span class="k">does</span>
-        <ul><li>Sends numbers only, to the agent you already use</li><li>Shows you every byte before it's sent</li><li>Checks your licence offline</li><li>Keeps reports on your machine</li></ul>
+        <ul><li>Sends numbers only, to the agent you already use</li><li>Shows you every byte before it's sent</li><li>Keeps reports on your machine</li></ul>
       </div>
       <div class="no"><span class="k">never</span>
         <ul><li>Reads your chats or your code</li><li>Opens your project files</li><li>Makes network calls of its own</li><li>Sends anything to us</li></ul>
       </div>
     </div>
-    <figure class="preview-fig">
+    <figure class="preview">
       <img src="media/insights-preview.png" width="1600" height="1163" alt="The payload preview: the agent, the window of sessions, and the exact bytes sent to the agent">
       <figcaption class="cap"><span>payload preview · before Send</span><span>the exact bytes your agent receives</span></figcaption>
     </figure>
@@ -413,11 +423,12 @@
   <section class="wrap block" id="faq">
     <div class="label"><b>~/faq</b></div>
     <div class="faq">
+      <details><summary>What exactly do I get for paying?</summary><p>Reports. Each one is a short list of findings about your last 7 days of sessions: one action, the cause, and the numbers behind it. You can export any report, or open a follow-up session in your agent to ask about it.</p></details>
+      <details><summary>Does Agent Deck need Insights?</summary><p>No. Agent Deck is free and complete on its own. Insights only adds the reports.</p></details>
       <details><summary>Do I need Agent Deck?</summary><p>Yes. Insights builds on the numbers Agent Deck records. Agent Deck is free.</p></details>
       <details><summary>Which agents does it work with?</summary><p>Claude Code or Codex, installed on your machine and signed in to your account.</p></details>
       <details><summary>What does a report cost me?</summary><p>Your plan, plus a little usage on your own agent account each time you run a report.</p></details>
       <details><summary>Is my code or chat history sent anywhere?</summary><p>No. Only numbers, file names and agent names go to your own agent, and you see them before you click Send.</p></details>
-      <details><summary>How is my licence checked?</summary><p>On your machine. You paste the key into VS Code. No account, no activation server.</p></details>
       <details><summary>How do I cancel a subscription?</summary><p>Through Polar, where you paid.</p></details>
     </div>
   </section>

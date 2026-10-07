@@ -268,7 +268,8 @@ media/**
 
 # THE HERO GIF IS TRACKED AND DELIBERATELY NOT RE-ADMITTED HERE (DoD 5.8
 # item 2, which authorises either outcome so long as it is recorded with the
-# byte count). `media/agent-deck-hero.gif` is 4,658,677 bytes - more than
+# byte count). `media/agent-deck-hero.gif` is 4,794,143 bytes (the 0.9.3.D
+# re-cut; 4,658,677 before) - more than
 # twice the entire 0.5.0 VSIX at 2,109,155 - so admitting it would make the
 # package the animation plus an extension.
 #
@@ -282,3 +283,7 @@ media/**
 #
 # `.gitignore` DOES admit it (a sixth `!` line there). Different doors, and
 # this is the one case where the two allow-lists are meant to disagree.
+#
+# `media/architecture.png` (0.9.3.D, the README's "Where it sits" diagram) is
+# the second such case, for the same reason: tracked in `.gitignore`, never
+# re-admitted here, rendered on the listing from the default branch.

@@ -53,12 +53,16 @@ media/*
 !media/sidebar-tweaks.png
 !media/stats-tokens-timing.png
 # The hero GIF, added for 0.6.0 (DoD 5.8). It is a SIXTH tracked image and
-# not one of the four: 4,658,677 bytes, referenced by README.md, and denied
+# not one of the four: 4,794,143 bytes since 0.9.3.D (4,658,677 before), referenced by README.md, and denied
 # in `.vscodeignore` so it does not ship inside the VSIX - the Marketplace
 # fetches README images from the default branch of the public repository, so
 # the listing renders it from GitHub rather than from the package. Different
 # doors, and this one has to admit it.
 !media/agent-deck-hero.gif
+# The README's architecture diagram (0.9.3.D), treated exactly like the hero
+# GIF: tracked, denied in `.vscodeignore`, rendered on the listing from the
+# default branch.
+!media/architecture.png
 
 # The whole .claude/ directory: agent definitions, skills, working notes and
 # settings.local.json. Local tooling, not product. Untracked before the public

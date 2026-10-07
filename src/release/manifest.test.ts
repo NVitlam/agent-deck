@@ -127,17 +127,22 @@ const readManifest = async (): Promise<Manifest> =>
  * observation engine without changing what the extension leads with: it is
  * still, first, for Claude Code.
  */
+// 0.9.3.D: the approved listing copy, exactly these eight in this order. The
+// Marketplace refuses more than 10 tags and vsce adds two of its own
+// (`keybindings`, `__sponsor_extension`), so eight is also the ceiling.
 const EXPECTED_KEYWORDS = [
-  'claude code',
   'observability',
   'agents',
-  'monitor',
   'subagents',
-  'opencode',
-  // v0.6.0. One keyword per observed engine, and the order is the order the
-  // engines arrived, which is also the order the README introduces them.
+  'ai agents',
+  'claude code',
   'codex',
+  'opencode',
+  'monitor',
 ];
+
+/** 0.9.3.D: the approved categories, exact. */
+const EXPECTED_CATEGORIES = ['Visualization', 'Other'];
 
 /** The first word, case-insensitively — "Claude Code" is fine anywhere else. */
 const LEADS_WITH_CLAUDE = /^claude\b/i;
@@ -177,11 +182,13 @@ describe('marketplace identity', () => {
    * control byte 0x14 by a latin1 write, and a hyphen here would be a
    * different name that looks the same in a diff.
    */
-  it('displays as the Gate H1 name, with a real em dash', async () => {
+  //
+  // 0.9.3.D replaced the Gate H1 name with the approved listing copy. The
+  // separator is now a colon and the string carries no dash at all; the
+  // exact-string assertion is what holds it.
+  it('displays as the approved 0.9.3 listing name', async () => {
     const manifest = await readManifest();
-    expect(manifest.displayName).toBe('Agent Deck \u2014 Watch Your Agents Work.');
-    const dashes = [...String(manifest.displayName)].filter((c) => c === '\u2014');
-    expect(dashes, 'the separator must be one em dash, not a hyphen').toHaveLength(1);
+    expect(manifest.displayName).toBe('Agent Deck: Live View of Your AI Coding Agents');
     expect(String(manifest.displayName)).not.toContain('<');
     expect(String(manifest.displayName)).not.toContain('>');
   });
@@ -216,16 +223,17 @@ describe('marketplace identity', () => {
    * write, and a hyphen substituted here would be a different string that
    * looks identical in a diff.
    */
-  it('describes all three engines, with a real em dash', async () => {
+  //
+  // 0.9.3.D: the approved listing copy, exact. It has no em dash, so the
+  // code-point check above has nothing to hold here; the exact string does.
+  it('describes all three engines, as the approved 0.9.3 listing copy', async () => {
     const manifest = await readManifest();
     expect(manifest.description).toBe(
-      'Live observability for coding-agent swarms \u2014 Claude Code, OpenCode and Codex, ' +
-        'side by side in VS Code. Read-only, zero egress.',
+      'A live tree of your AI coding agents and their tool calls, inside VS Code. ' +
+        'Claude Code, Codex and OpenCode. Read-only, nothing leaves your machine.',
     );
 
     const description = String(manifest.description);
-    const dashes = [...description].filter((c) => c === '\u2014');
-    expect(dashes, 'the separator must be one em dash, not a hyphen').toHaveLength(1);
 
     // The engine SET, asserted separately from the sentence. The wording may
     // be rewritten; a rewrite that silently drops an engine is the defect this
@@ -239,7 +247,12 @@ describe('marketplace identity', () => {
     expect(manifest.keywords).toEqual(EXPECTED_KEYWORDS);
     // Rule 19's shape: the count beside the set, so a comparison written
     // accidentally against an empty or filtered list cannot pass vacuously.
-    expect(manifest.keywords).toHaveLength(7);
+    expect(manifest.keywords).toHaveLength(8);
+  });
+
+  it('carries exactly the approved categories', async () => {
+    const manifest = (await readManifest()) as { categories?: unknown };
+    expect(manifest.categories).toStrictEqual(EXPECTED_CATEGORIES);
   });
 
   it('names the repository vsce asks for', async () => {

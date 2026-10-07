@@ -241,6 +241,10 @@ const README = readText('README.md');
  */
 const RELEASE_IMAGES: readonly string[] = [
   'media/agent-deck-hero.gif',
+  // 0.9.3.D: the "Where it sits" diagram in the approved top section. Treated
+  // exactly like the hero GIF: tracked, denied in `.vscodeignore`, rendered on
+  // the listing from the default branch.
+  'media/architecture.png',
   // v0.7.1 DoD 6.D.1 (2026-09-11): the user's captures of session 2ffb0c69 on
   // build fed3b31 — the deck, its tree, its inspector — in place of the four
   // 0.6.x-era stills, which are now in the RETIRED list below. The two
@@ -370,6 +374,28 @@ function sectionText(heading: string): string {
   if (README.indexOf(heading, start + 1) >= 0) {
     throw new Error(`README repeats the section heading: ${heading}`);
   }
+  const rest = README.slice(start + heading.length);
+  const end = rest.indexOf('\n## ');
+  return end < 0 ? rest : rest.slice(0, end);
+}
+
+/**
+ * The body of the `nth` (1-based) of EXACTLY `count` occurrences of a heading.
+ *
+ * For the one heading the README carries twice on purpose: the ruling of
+ * 2026-10-07 (0.9.3.D) accepted the approved top section's `## Install`
+ * beside the technical one. Throws unless the heading occurs exactly `count`
+ * times, so a third copy, or one of the two vanishing, is a failure rather
+ * than a quietly different section.
+ */
+function nthSectionText(heading: string, nth: number, count: number): string {
+  const starts: number[] = [];
+  for (let at = README.indexOf(heading); at >= 0; at = README.indexOf(heading, at + 1)) starts.push(at);
+  if (starts.length !== count) {
+    throw new Error(`README carries ${heading.trim()} ${starts.length} times, expected ${count}`);
+  }
+  const start = starts[nth - 1];
+  if (start === undefined) throw new Error(`README has no occurrence ${nth} of ${heading.trim()}`);
   const rest = README.slice(start + heading.length);
   const end = rest.indexOf('\n## ');
   return end < 0 ? rest : rest.slice(0, end);
@@ -769,7 +795,7 @@ describe('README exists and ships clean', () => {
     }
   });
 
-  it('carries the six release assets, in order', () => {
+  it('carries the release assets, in order', () => {
     // WHAT THIS ASSERTED BEFORE 2026-08-30, because the change is the point:
     // it asserted the four references were present and in order WHETHER OR NOT
     // THE FILES EXISTED, and it carried the exemption that let them not exist.
@@ -943,9 +969,10 @@ describe('README exists and ships clean', () => {
     // NINE SINCE v0.7.1 DoD 6.D.4: plus the Tokens screenshot.
     // EIGHT SINCE v0.7.1 DoD 6.D.1: four stills out, three captures in.
     // ELEVEN SINCE v0.8.0 DoD 7.D: plus the 7.12 smoke's drawer, Tweaks and Tokens captures.
+    // TWELVE SINCE 0.9.3.D: plus the architecture diagram.
     // Amended, never relaxed - this is still equality both ways with the count
     // beside it, and the reason is unchanged from the v0.5.0 comment above.
-    expect(tracked).toHaveLength(11);
+    expect(tracked).toHaveLength(12);
   }, 20_000);
 });
 
@@ -3221,8 +3248,10 @@ describe('DoD 5.3 — the three-engine table agrees with the goldens', () => {
 
 describe('DoD 5.5b — the README install section names the sidebar and its menu', () => {
   // The EXACT heading, newline included: `## Install` is also a prefix of the
-  // two hook-install headings, and `sectionText` refuses a repeated match.
-  const INSTALL = sectionText('## Install\n');
+  // two hook-install headings. Since 0.9.3.D the README carries it twice (the
+  // approved top section's three steps, then this technical section), so the
+  // SECOND of exactly two is the one documented here.
+  const INSTALL = nthSectionText('## Install\n', 2, 2);
 
   it('names the activity-bar icon as the entry point', () => {
     expect(INSTALL).toContain('the Agent Deck icon in the activity bar');

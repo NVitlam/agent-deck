@@ -531,7 +531,19 @@ describe('the gate decision is pinned: CI never publishes', () => {
   // user's, always and without exception. That does not expire when a publisher
   // exists; it is the whole point of it. A publish step in a workflow makes the
   // decision a push, which is the thing being refused.
-  const FORBIDDEN = ['vsce publish', 'VSCE_PAT', 'AZURE_', 'marketplace.visualstudio.com'];
+  //
+  // Open VSX since 0.9.4 (ruling of 2026-10-11): a second registry for the same
+  // VSIX, reserved the same way, so its command, token and host are refused on
+  // the same terms.
+  const FORBIDDEN = [
+    'vsce publish',
+    'VSCE_PAT',
+    'AZURE_',
+    'marketplace.visualstudio.com',
+    'ovsx publish',
+    'OVSX_PAT',
+    'open-vsx.org',
+  ];
 
   it('no executed line in any workflow publishes or names a marketplace/PAT secret', () => {
     for (const wf of WORKFLOWS) {
@@ -559,6 +571,8 @@ describe('the gate decision is pinned: CI never publishes', () => {
     expect(comments).toContain('vsce publish');
     expect(comments).toContain('VSCE_PAT');
     expect(comments.toLowerCase()).toContain('publisher');
+    expect(comments).toContain('ovsx publish');
+    expect(comments).toContain('OVSX_PAT');
   });
 });
 

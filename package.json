@@ -1,7 +1,7 @@
 {
   "name": "agent-deck",
   "displayName": "Agent Deck: Live View of Your AI Coding Agents",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "publisher": "nvitlam",
   "description": "A live tree of your AI coding agents and their tool calls, inside VS Code. Claude Code, Codex and OpenCode. Read-only, nothing leaves your machine.",
   "sponsor": {
@@ -31,7 +31,7 @@
   "main": "./dist/extension.cjs",
   "engines": {
     "node": ">=22.22.2",
-    "vscode": "^1.134.0"
+    "vscode": "^1.126.0"
   },
   "devEngines": {
     "runtime": {
@@ -849,7 +849,7 @@
   "devDependencies": {
     "@eslint/js": "^9.0.0",
     "@types/node": "^24.0.0",
-    "@types/vscode": "^1.75.0",
+    "@types/vscode": "1.125.0",
     "@vscode/vsce": "3.9.2",
     "esbuild": "^0.25.0",
     "esbuild-svelte": "^0.9.5",

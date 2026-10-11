@@ -1422,7 +1422,7 @@ describe('the version badge is accurate against the shipped constants', () => {
 
   it('names no Claude Code version the shipped parser would refuse', () => {
     // A badge is only accurate if nothing NEXT to it contradicts it. Backticked
-    // `x.y.z` literals are how this document names CC versions; `^1.134.0` and
+    // `x.y.z` literals are how this document names CC versions; `^1.126.0` and
     // `>=22.22.2` do not match because the backtick is not followed by a digit.
     //
     // The rule used to be "the anchor or a corner, and nothing else". It cannot

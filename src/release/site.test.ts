@@ -164,12 +164,15 @@ const PINNED_IMAGES: Readonly<Record<string, string>> = {
  * NAVIGATION, not a fetch — the CSP below still lets no page load anything
  * from any host — so the allow-list states where a reader can be SENT.
  * `nvitlam.github.io` since the ruling of 2026-09-29: the footer's author link.
+ * `open-vsx.org` since the ruling of 2026-10-11 (0.9.4.D): the install line
+ * for Cursor, Windsurf, Kiro and VSCodium.
  */
 const ALLOWED_HOSTS: readonly string[] = [
   'github.com',
   'marketplace.visualstudio.com',
   'buy.polar.sh',
   'nvitlam.github.io',
+  'open-vsx.org',
 ];
 
 /**
@@ -396,6 +399,13 @@ describe('the page reaches nothing it should not', () => {
     expect(marketLinks.length).toBeGreaterThan(0);
     for (const link of marketLinks) {
       expect(link).toContain(`${MANIFEST.publisher}.`);
+    }
+
+    // 0.9.4.D: the Open VSX link names the same publisher, as a namespace.
+    const openVsxLinks = pageUrls().filter((u) => new URL(u).host === 'open-vsx.org');
+    expect(openVsxLinks.length).toBeGreaterThan(0);
+    for (const link of openVsxLinks) {
+      expect(new URL(link).pathname).toBe(`/extension/${MANIFEST.publisher}/agent-deck`);
     }
   });
 });

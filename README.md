@@ -227,7 +227,7 @@ transcript; what degrades is liveness, which falls back to file modification tim
 
 ## Requirements
 
-- **VS Code** `^1.134.0`
+- **VS Code** `^1.126.0`
 - **Node** `>=22.22.2` on your `PATH` — the hook block below is a `node -e` one-liner, so your Node
   is what runs it
 - **Claude Code** on the `2.x` line, within one minor of the anchor (see below). Patch releases are
@@ -246,6 +246,8 @@ Install from the VS Code Marketplace - open the **Extensions** view and search f
 ```console
 code --install-extension nvitlam.agent-deck
 ```
+
+Using Cursor, Windsurf, Kiro or VSCodium? Install Agent Deck from Open VSX: https://open-vsx.org/extension/nvitlam/agent-deck
 
 **Where to find it: the Agent Deck icon in the activity bar.** It opens a sidebar with a strip
 of three tabs — **Menu · View · Tweaks** — one open at a time. The same three are on the view's

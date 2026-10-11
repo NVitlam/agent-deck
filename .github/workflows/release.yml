@@ -25,6 +25,16 @@
 #     env:
 #       VSCE_PAT: ${{ secrets.VSCE_PAT }}
 #
+# OPEN VSX, SINCE 0.9.4 (ruling of 2026-10-11): the same VSIX goes to a second
+# registry, namespace nvitlam, right after the Marketplace step and under the
+# same reservation. The human runs it from the same fresh PowerShell:
+#
+#   $env:OVSX_PAT = Read-Host -AsSecureString "Open VSX token" | ConvertFrom-SecureString -AsPlainText
+#   npx ovsx publish dist\agent-deck.vsix
+#   Remove-Item Env:\OVSX_PAT
+#
+# No -p flag: ovsx reads OVSX_PAT itself, so npm cannot echo the token.
+#
 # That block is what the step would look like. It is written out rather than
 # described so that if the decision is ever reversed, the reversal is an edit to
 # a workflow and a deleted assertion in src/release/workflow.test.ts - both

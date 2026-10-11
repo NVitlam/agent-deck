@@ -5825,7 +5825,8 @@ function editorGroupCount(): number {
  * ## Why this is not just `resolveStoreDir(context)`
  *
  * `globalStorageUri` has been on `ExtensionContext` since VS Code 1.31 and
- * this extension's floor is `^1.134.0`, so in the editor it is always there.
+ * this extension's floor is `^1.126.0` (ruling of 2026-10-11), so in the
+ * editor it is always there.
  * That is an argument for expecting it, not for CRASHING without it — and the
  * first version of this call did crash: `resolveStoreDir` reads
  * `context.globalStorageUri.fsPath`, which throws `TypeError: Cannot read

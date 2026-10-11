@@ -2,6 +2,12 @@
 
 All notable changes to Agent Deck are documented here.
 
+## 0.9.4 - 2026-10-11 - Open VSX
+
+### Changed
+
+- Agent Deck now installs in VS Code 1.126 and later, and in Cursor, Windsurf, Kiro and VSCodium through Open VSX.
+
 ## 0.9.3 - 2026-10-07 - Listing copy
 
 ### Changed

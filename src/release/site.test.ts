@@ -165,7 +165,8 @@ const PINNED_IMAGES: Readonly<Record<string, string>> = {
  * from any host — so the allow-list states where a reader can be SENT.
  * `nvitlam.github.io` since the ruling of 2026-09-29: the footer's author link.
  * `open-vsx.org` since the ruling of 2026-10-11 (0.9.4.D): the install line
- * for Cursor, Windsurf, Kiro and VSCodium.
+ * for the forks; since the ruling of 2026-10-12 (docs/editors) the "Works in"
+ * rows of both pages and the Insights FAQ link it too.
  */
 const ALLOWED_HOSTS: readonly string[] = [
   'github.com',
@@ -402,11 +403,20 @@ describe('the page reaches nothing it should not', () => {
     }
 
     // 0.9.4.D: the Open VSX link names the same publisher, as a namespace.
-    const openVsxLinks = pageUrls().filter((u) => new URL(u).host === 'open-vsx.org');
-    expect(openVsxLinks.length).toBeGreaterThan(0);
-    for (const link of openVsxLinks) {
-      expect(new URL(link).pathname).toBe(`/extension/${MANIFEST.publisher}/agent-deck`);
+    // Ruling of 2026-10-12: the Insights page links its own extension there,
+    // allowed the same way. Each page names only its own extension.
+    const openVsxPaths: ReadonlyArray<readonly [string, string]> = [
+      [PAGE, `/extension/${MANIFEST.publisher}/agent-deck`],
+      [INSIGHTS, `/extension/${MANIFEST.publisher}/agent-deck-insights`],
+    ];
+    for (const [html, path] of openVsxPaths) {
+      const openVsxLinks = pageUrls(html).filter((u) => new URL(u).host === 'open-vsx.org');
+      expect(openVsxLinks.length, path).toBeGreaterThan(0);
+      for (const link of openVsxLinks) {
+        expect(new URL(link).pathname).toBe(path);
+      }
     }
+    expect(pageUrls(THANKS).filter((u) => new URL(u).host === 'open-vsx.org')).toStrictEqual([]);
   });
 });
 
@@ -977,5 +987,291 @@ describe('ruling of 2026-10-07 (16) — the "what you see" frame hugs its pictur
     expect(shotRules(old)).toStrictEqual(['max-height:560px;object-fit:contain;object-position:top left']);
     expect(shotRules(old)[0]).toContain('object-fit');
     expect(shotRules(old)[0]).not.toContain('width:auto');
+  });
+});
+
+/*
+ * Ruling of 2026-10-12 (docs/editors): the editors are named exactly, as plain
+ * text, and VSCodium is named nowhere, because it was never tested.
+ */
+const EDITORS: readonly string[] = ['VS Code', 'Cursor', 'Devin (Windsurf)', 'Kiro'];
+
+/** The pill texts of each "Works in" row on a page, one array per row. */
+function worksInRows(html: string): string[][] {
+  return [...html.matchAll(/<div class="works"><span class="works-k">Works in<\/span><ul class="pills"[^>]*>([\s\S]*?)<\/ul><\/div>/g)].map(
+    (m) => [...(m[1] ?? '').matchAll(/<li>([^<]*)<\/li>/g)].map((li) => li[1] ?? ''),
+  );
+}
+
+/** A hero's markup: from its `<h1>` through the end of its "Works in" row. */
+function heroOf(html: string): string {
+  const start = html.indexOf('<h1>');
+  const row = html.indexOf('<div class="works">', start);
+  const end = row < 0 ? -1 : html.indexOf('</ul></div>', row);
+  return start < 0 || end < 0 ? '' : html.slice(start, end + '</ul></div>'.length);
+}
+
+/** A hero's visible text, tags dropped and whitespace collapsed. */
+function heroText(html: string): string {
+  return heroOf(html).replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+}
+
+/** The hero's `.cta` links: class, href, label without the arrow. */
+function heroButtons(html: string): string[][] {
+  const cta = /<div class="cta">([\s\S]*?)<\/div>/.exec(heroOf(html))?.[1] ?? '';
+  return [...cta.matchAll(/<a class="([^"]+)" href="([^"]+)">([^<]*)<span class="arr">→<\/span><\/a>/g)].map((m) => [
+    m[1] ?? '',
+    m[2] ?? '',
+    (m[3] ?? '').trim(),
+  ]);
+}
+
+describe('ruling of 2026-10-12 — the editors, by name', () => {
+  it('neither site page, nor the README, names VSCodium', () => {
+    for (const [name, text] of [...Object.entries(PAGES), ['README.md', README] as const]) {
+      expect(/vscodium/i.test(text), `${name} names VSCodium`).toBe(false);
+    }
+  });
+
+  it('each page has one "Works in" row carrying the four editor names, in order', () => {
+    for (const [name, html] of Object.entries(STYLED)) {
+      const rows = worksInRows(html);
+      expect(rows, name).toStrictEqual([[...EDITORS]]);
+      expect(rows[0], name).toHaveLength(4);
+    }
+  });
+
+  it('each hero says exactly the ruled words, from the heading through the "Works in" row', () => {
+    // The hero rulings of 2026-10-12: every sentence in the hero that names an
+    // editor or a store agrees with the pill row, and the separate Open VSX
+    // line under the row is gone.
+    const expected: Readonly<Record<string, string>> = {
+      'index.html':
+        'See what your coding agents are doing. Right now. ' +
+        'Agent Deck is a free extension for VS Code, Cursor, Devin (Windsurf) and Kiro that draws a live tree of every agent and every tool call, as they work. Claude Code, Codex and OpenCode. ' +
+        'Install for VS Code → Install for Cursor, Devin or Kiro → live on the VS Code Marketplace and Open VSX ' +
+        'Works in VS Code Cursor Devin (Windsurf) Kiro',
+      'insights.html':
+        'Find out what slowed your agents down. And what to change. ' +
+        'Agent Deck Insights is an optional paid add-on. Your own Claude Code or Codex reads what Agent Deck recorded and tells you what to change next time: fewer failed calls, less waiting, fewer wasted tokens. ' +
+        'See plans · from $10 → needs Agent Deck (free) + Claude Code or Codex to write the reports ' +
+        'Install: VS Code Marketplace · Open VSX (Cursor, Devin, Kiro) ' +
+        'Works in VS Code Cursor Devin (Windsurf) Kiro',
+    };
+    for (const [name, html] of Object.entries(STYLED)) {
+      expect(heroText(html), name).toBe(expected[name]);
+      expect(heroText(html), name).not.toMatch(/VS Code extension/);
+    }
+  });
+
+  it('each hero button goes where the ruling sends it', () => {
+    expect(heroButtons(PAGE)).toStrictEqual([
+      ['btn solid', `https://marketplace.visualstudio.com/items?itemName=${MANIFEST.publisher}.agent-deck`, 'Install for VS Code'],
+      ['btn', `https://open-vsx.org/extension/${MANIFEST.publisher}/agent-deck`, 'Install for Cursor, Devin or Kiro'],
+    ]);
+    // Ruling of 2026-10-13: the Insights hero keeps one button; both stores
+    // sit in one text line under it, with equal weight.
+    expect(heroButtons(INSIGHTS)).toStrictEqual([['btn solid', '#plans', 'See plans · from $10']]);
+    const stores = /<p class="fine stores">([\s\S]*?)<\/p>/.exec(heroOf(INSIGHTS))?.[1] ?? '';
+    expect([...stores.matchAll(/<a href="([^"]+)">([^<]*)<\/a>/g)].map((m) => [m[1], m[2]])).toStrictEqual([
+      [`https://marketplace.visualstudio.com/items?itemName=${MANIFEST.publisher}.agent-deck-insights`, 'VS Code Marketplace'],
+      [`https://open-vsx.org/extension/${MANIFEST.publisher}/agent-deck-insights`, 'Open VSX'],
+    ]);
+    expect(/<p class="fine stores">/.test(heroOf(PAGE))).toBe(false);
+  });
+
+  it('each meta description names the editors the way the hero does, or none', () => {
+    const meta = (html: string): string => /<meta name="description" content="([^"]+)">/.exec(html)?.[1] ?? '';
+    expect(meta(PAGE)).toContain('a free extension for VS Code, Cursor, Devin (Windsurf) and Kiro');
+    expect(meta(INSIGHTS)).not.toMatch(/VS Code|Cursor|Devin|Windsurf|Kiro/);
+    for (const html of [PAGE, INSIGHTS]) {
+      expect(meta(html)).not.toBe('');
+      expect(meta(html)).not.toContain('VS Code extension');
+    }
+  });
+
+  it('every "VS Code" on both pages names VS Code itself, never "your editor"', () => {
+    // Ruling of 2026-10-13: each occurrence sits inside one of these phrases,
+    // all of which name VS Code alongside the other editors or name its own
+    // store, command or button. The count is pinned beside the phrases.
+    const ALLOWED_PHRASES = [
+      'VS Code, Cursor, Devin (Windsurf) and Kiro',
+      'Install for VS Code ',
+      'VS Code Marketplace',
+      '<li>VS Code</li>',
+      'VS Code · Cursor · Devin (Windsurf) · Kiro',
+      '<strong>VS Code:</strong>',
+      'VS Code 1.126 or later, Cursor, Devin (Windsurf) and Kiro',
+    ];
+    const covered = (html: string, at: number): boolean =>
+      ALLOWED_PHRASES.some((p) => {
+        const offset = p.indexOf('VS Code');
+        return html.slice(at - offset, at - offset + p.length) === p;
+      });
+    const counts: Record<string, number> = {};
+    for (const [name, html] of Object.entries(STYLED)) {
+      const hits = [...html.matchAll(/VS Code/g)].map((m) => m.index ?? 0);
+      counts[name] = hits.length;
+      for (const at of hits) {
+        expect(covered(html, at), `${name}: "${html.slice(at - 40, at + 40)}"`).toBe(true);
+      }
+    }
+    expect(counts).toStrictEqual({ 'index.html': 9, 'insights.html': 4 });
+    // Control: the old wording is refused.
+    const old = 'a live tree of your agents, right inside VS Code.';
+    expect(covered(old, old.indexOf('VS Code'))).toBe(false);
+  });
+
+  it('vacuity control: the reader finds a row, and refuses a missing or renamed pill', () => {
+    const row = (pills: string[]): string =>
+      `<div class="works"><span class="works-k">Works in</span><ul class="pills" aria-label="Editors">${pills.map((p) => `<li>${p}</li>`).join('')}</ul></div>`;
+    expect(worksInRows(row([...EDITORS]))).toStrictEqual([[...EDITORS]]);
+    expect(worksInRows(row(['VS Code', 'Cursor', 'Windsurf', 'Kiro']))).not.toStrictEqual([[...EDITORS]]);
+    expect(worksInRows(row(['VS Code', 'Cursor', 'Kiro']))).not.toStrictEqual([[...EDITORS]]);
+    expect(worksInRows('<p>no row</p>')).toStrictEqual([]);
+    expect(/vscodium/i.test('Using VSCodium?')).toBe(true);
+  });
+});
+
+/** Visible text of an HTML fragment, tags dropped and whitespace collapsed. */
+function visible(html: string): string {
+  return html
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+    .replace(/ ([,.:;])/g, '$1')
+    .trim();
+}
+
+/** A page's section, from its `~/name` label to the section's close. */
+function sectionOf(html: string, label: string): string {
+  const at = html.indexOf(`<b>${label}</b>`);
+  return at < 0 ? '' : html.slice(at, html.indexOf('</section>', at));
+}
+
+/** The `.spec` rows of a fragment, as [label, text]. */
+function specRows(html: string): string[][] {
+  return [...html.matchAll(/<li><span class="k">([^<]*)<\/span><span class="v">([\s\S]*?)<\/span><\/li>/g)].map((m) => [
+    m[1] ?? '',
+    visible(m[2] ?? ''),
+  ]);
+}
+
+/** The links of a page's footer nav, as [label, href]. */
+function footerLinks(html: string): string[][] {
+  const nav = /<footer\b[\s\S]*?<nav[^>]*>([\s\S]*?)<\/nav>/.exec(html)?.[1] ?? '';
+  return [...nav.matchAll(/<a href="([^"]+)">([^<]*)<\/a>/g)].map((m) => [m[2] ?? '', m[1] ?? '']);
+}
+
+describe('ruling of 2026-10-13 — your editor, not VS Code alone', () => {
+  const MARKET = `https://marketplace.visualstudio.com/items?itemName=${MANIFEST.publisher}`;
+  const OPEN_VSX = `https://open-vsx.org/extension/${MANIFEST.publisher}`;
+
+  it('index.html: the title says "your editor"', () => {
+    expect(/<title>([^<]*)<\/title>/.exec(PAGE)?.[1]).toBe('Agent Deck · A live tree of your AI coding agents in your editor');
+  });
+
+  it('index.html: ~/where-it-sits comes directly before ~/what-you-see', () => {
+    const labels = [...PAGE.matchAll(/<div class="label"><b>(~\/[a-z-]+)<\/b>/g)].map((m) => m[1] ?? '');
+    const where = labels.indexOf('~/where-it-sits');
+    expect(where).toBeGreaterThanOrEqual(0);
+    expect(labels[where + 1]).toBe('~/what-you-see');
+    expect(labels.filter((l) => l === '~/where-it-sits' || l === '~/what-you-see')).toHaveLength(2);
+  });
+
+  it('index.html: ~/what-is-it says "your editor" and names the four editors', () => {
+    const section = sectionOf(PAGE, '~/what-is-it');
+    expect(section).toContain('a live tree of your agents and their tool calls, right inside your editor.');
+    expect(specRows(section)[0]).toStrictEqual(['editor extension', 'Free and open source (MIT). For VS Code, Cursor, Devin (Windsurf) and Kiro.']);
+  });
+
+  it('index.html: the diagram box is "Your editor", with the four editors under it', () => {
+    const svg = /<svg[\s\S]*?<\/svg>/.exec(sectionOf(PAGE, '~/where-it-sits'))?.[0] ?? '';
+    const texts = [...svg.matchAll(/<text[^>]*>([^<]*)<\/text>/g)].map((m) => m[1] ?? '');
+    expect(texts).toContain('Your editor');
+    expect(texts).toContain('VS Code · Cursor · Devin (Windsurf) · Kiro');
+    expect(texts).not.toContain('VS Code');
+    expect(svg).toContain('Agent Deck, inside your editor, reads those files');
+  });
+
+  it('index.html: ~/why-agent-deck is the ruled heading and three rows, nothing else', () => {
+    const section = sectionOf(PAGE, '~/why-agent-deck');
+    expect(visible(/<h2>([\s\S]*?)<\/h2>/.exec(section)?.[1] ?? '')).toBe(
+      "Other tools tell you what happened. Agent Deck shows you what's happening.",
+    );
+    expect(specRows(section)).toStrictEqual([
+      ['after the fact', "Usage reports and transcript viewers work once the session is over. They show you the bill, not what's running now."],
+      ['inside the agent', "Your agent's own window shows its conversation, not the whole tree of agents working under it."],
+      ['agent deck', 'Every agent and every tool call, live, in one tree. Read-only, and no network.'],
+    ]);
+    // No closing sentence: the list is the last thing in the section.
+    expect(section.trimEnd().endsWith('</ul>')).toBe(true);
+    for (const name of ['ccusage', 'claude-code-log', 'official extension']) expect(PAGE).not.toContain(name);
+  });
+
+  it('index.html: ~/install step 01 is two lines, one per store; step 02 says your editor', () => {
+    const section = sectionOf(PAGE, '~/install');
+    const one = section.slice(section.indexOf('<span class="n">01</span>'), section.indexOf('<span class="n">02</span>'));
+    expect(one.length).toBeGreaterThan(0);
+    expect([...one.matchAll(/<p>([\s\S]*?)<\/p>/g)].map((m) => visible(m[1] ?? ''))).toStrictEqual([
+      'VS Code: install from the VS Code Marketplace, or run',
+      'Cursor, Devin (Windsurf) or Kiro: install from Open VSX',
+    ]);
+    expect(one).toContain('<code id="cmd1">code --install-extension nvitlam.agent-deck</code><button class="copy" type="button" id="copy1">copy</button>');
+    expect([...one.matchAll(/<a href="([^"]+)">([^<]*)<\/a>/g)].map((m) => [m[1], m[2]])).toStrictEqual([
+      [`${MARKET}.agent-deck`, 'VS Code Marketplace'],
+      [`${OPEN_VSX}/agent-deck`, 'Open VSX'],
+    ]);
+    expect(section).not.toContain('Works in VS Code 1.126');
+    expect(visible(section)).toContain("Click the Agent Deck icon in your editor's sidebar. Your sessions appear.");
+  });
+
+  it('both footers carry "open vsx" next to "marketplace", each to its own extension', () => {
+    for (const [html, ext] of [[PAGE, 'agent-deck'], [INSIGHTS, 'agent-deck-insights']] as const) {
+      const links = footerLinks(html);
+      const at = links.findIndex(([label]) => label === 'marketplace');
+      expect(links[at], ext).toStrictEqual(['marketplace', `${MARKET}.${ext}`]);
+      expect(links[at + 1], ext).toStrictEqual(['open vsx', `${OPEN_VSX}/${ext}`]);
+    }
+  });
+
+  it('insights.html: the plan terms are centred, as fc2f9f7 set them', () => {
+    // e6afd24 (0.9.3.D) dropped these four declarations and the terms went
+    // back to the left edge of their cells. Pinned on the one top-level rule.
+    const blocks = cssBlocks(styleOf(INSIGHTS));
+    const rules = blocks.filter((b) => b.media === null && b.selector === '.prices .term');
+    expect(rules).toHaveLength(1);
+    const decls = Object.fromEntries(
+      (rules[0]?.body ?? '')
+        .split(';')
+        .map((d) => d.split(':').map((s) => s.trim()))
+        .filter((d) => d.length === 2),
+    );
+    expect(decls).toMatchObject({
+      display: 'flex',
+      'align-items': 'center',
+      'justify-content': 'center',
+      'text-align': 'center',
+    });
+    // Nothing later in the sheet takes them back for the term cells.
+    const later = blocks.filter(
+      (b) => b.selector.split(',').some((s) => s.trim().endsWith('.prices .term')) && b !== rules[0],
+    );
+    for (const rule of later) expect(rule.body, `${rule.media ?? ''} ${rule.selector}`).not.toMatch(/display|justify-content|text-align/);
+  });
+
+  it('insights.html: the plans intro says where to install, and the FAQ says Agent Deck comes along', () => {
+    const intro = /<p class="intro">([\s\S]*?)<\/p>/.exec(sectionOf(INSIGHTS, '~/plans'))?.[1] ?? '';
+    expect(visible(intro)).toBe(
+      'Every plan unlocks the same Insights. Your licence key arrives by email within minutes. ' +
+        'Then install Insights from the VS Code Marketplace or Open VSX, and run Set License Key.',
+    );
+    expect([...intro.matchAll(/<a href="([^"]+)">/g)].map((m) => m[1])).toStrictEqual([
+      `${MARKET}.agent-deck-insights`,
+      `${OPEN_VSX}/agent-deck-insights`,
+    ]);
+    expect(INSIGHTS).toContain(
+      '<summary>Do I need Agent Deck?</summary><p>Yes. Insights builds on the numbers Agent Deck records. Agent Deck is free, and it installs automatically with Insights.</p>',
+    );
   });
 });

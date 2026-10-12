@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Agent Deck · A live tree of your AI coding agents in VS Code</title>
-<meta name="description" content="Agent Deck is a free VS Code extension that draws a live tree of every agent and every tool call, as they work. Claude Code, Codex and OpenCode. Read-only, nothing leaves your machine.">
+<title>Agent Deck · A live tree of your AI coding agents in your editor</title>
+<meta name="description" content="Agent Deck is a free extension for VS Code, Cursor, Devin (Windsurf) and Kiro that draws a live tree of every agent and every tool call, as they work. Claude Code, Codex and OpenCode. Read-only, nothing leaves your machine.">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'self'; base-uri 'none'; form-action 'none'">
 <style>
   :root{
@@ -82,6 +82,11 @@
   .btn .arr{transition:transform .2s}
   .btn:hover .arr{transform:translateX(3px)}
   .fine{font-family:var(--font-mono);font-size:.74rem;color:var(--text-3)}
+  /* the editors it works in: plain-text pills, no logos (ruling of 2026-10-12) */
+  .works{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;margin-top:20px}
+  .works-k{font-family:var(--font-mono);font-size:.74rem;color:var(--text-3)}
+  .pills{display:flex;flex-wrap:wrap;gap:8px;list-style:none;padding:0}
+  .pills li{font-family:var(--font-mono);font-size:.74rem;color:var(--text-2);padding:4px 12px;border:1px solid var(--line-2);border-radius:14px;background:var(--bg);white-space:nowrap}
 
   /* section head: mono path label + title */
   section.block{padding-block:80px 0}
@@ -313,11 +318,13 @@
     <div class="wrap">
       <div class="herotext"><div class="status"><span class="on">live</span><i>·</i><span>Claude Code · Codex · OpenCode</span><i>·</i><span>0 network calls</span></div>
       <h1>See what your coding agents are doing. <span class="hl">Right now.</span></h1>
-      <p class="sub">Agent Deck is a free VS Code extension that draws a live tree of every agent and every tool call, as they work. Claude Code, Codex and OpenCode.</p>
+      <p class="sub">Agent Deck is a free extension for VS Code, Cursor, Devin (Windsurf) and Kiro that draws a live tree of every agent and every tool call, as they work. Claude Code, Codex and OpenCode.</p>
       <div class="cta">
-        <a class="btn solid" href="https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck">Install free <span class="arr">→</span></a>
-        <span class="livechip">live on the VS Code Marketplace</span>
+        <a class="btn solid" href="https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck">Install for VS Code <span class="arr">→</span></a>
+        <a class="btn" href="https://open-vsx.org/extension/nvitlam/agent-deck">Install for Cursor, Devin or Kiro <span class="arr">→</span></a>
+        <span class="livechip">live on the VS Code Marketplace and Open VSX</span>
       </div>
+      <div class="works"><span class="works-k">Works in</span><ul class="pills" aria-label="Editors"><li>VS Code</li><li>Cursor</li><li>Devin (Windsurf)</li><li>Kiro</li></ul></div>
       </div>
       <figure class="mt-48">
         <img src="media/agent-deck-hero.gif" width="1100" height="742" alt="Agent Deck drawing a live tree as one session spawns 4 lead agents, each spawning 2 workers">
@@ -337,9 +344,9 @@
   <section class="wrap block">
     <div class="label"><b>~/what-is-it</b></div>
     <h2>Live observability for AI coding agents.</h2>
-    <p class="intro">In plain words: a live tree of your agents and their tool calls, right inside VS Code.</p>
+    <p class="intro">In plain words: a live tree of your agents and their tool calls, right inside your editor.</p>
     <ul class="spec">
-      <li><span class="k">vs code extension</span><span class="v">Free and open source (MIT). Install it from the VS Code Marketplace.</span></li>
+      <li><span class="k">editor extension</span><span class="v">Free and open source (MIT). For VS Code, Cursor, Devin (Windsurf) and Kiro.</span></li>
       <li><span class="k">works with</span><span class="v">Claude Code, Codex and OpenCode. You run them as usual; Agent Deck only watches, and shows their sessions side by side in one panel.</span></li>
       <li><span class="k">session files</span><span class="v">Reads the files your agents already write to your disk as they work.</span></li>
       <li><span class="k">hooks</span><span class="v">Optional. Claude Code and Codex hooks ping it on 127.0.0.1 when an agent starts or a tool finishes. You paste them in yourself.</span></li>
@@ -353,31 +360,12 @@
     <blockquote class="founder"><p>"I built Agent Deck because I couldn't understand what was running on my own machine."</p><cite>Nadav Vitlam, creator</cite></blockquote>
   </section>
 
-  <section class="wrap block" id="see">
-    <div class="label"><b>~/what-you-see</b></div>
-    <h2>One panel. Everything your agents are doing.</h2>
-    <div class="viewer">
-      <ul class="tabs" role="tablist" aria-label="Views">
-        <li><button role="tab" id="t-deck" aria-selected="true" data-img="media/deck.png" data-alt="The deck: one card per live session"><span class="n">01</span><span class="d"><strong>Deck</strong>Every live session at a glance, from every agent.</span></button></li>
-        <li><button role="tab" id="t-tree" aria-selected="false" data-img="media/tree.png" data-alt="One session's tree: the main agent and the subagents it spawned"><span class="n">02</span><span class="d"><strong>Tree</strong>Who spawned whom, and what each agent is doing now.</span></button></li>
-        <li><button role="tab" id="t-insp" aria-selected="false" data-img="media/inspector.png" data-alt="The inspector: a tool call expanded to its input and output"><span class="n">03</span><span class="d"><strong>Inspector</strong>Open any call: what went in, what came out, how long it took.</span></button></li>
-        <li><button role="tab" id="t-stats" aria-selected="false" data-img="media/stats_tokens.png" data-alt="The Stats view: cost and tokens per agent"><span class="n">04</span><span class="d"><strong>Stats</strong>Files and tools each session hammered, loops, and tokens over time.</span></button></li>
-      </ul>
-      <figure class="shot" role="tabpanel" aria-live="polite"><img id="shot" src="media/deck.png" width="1638" height="1998" alt="The deck: one card per live session"></figure>
-    </div>
-    <ul class="spec also">
-      <li><span class="k">stalled</span><span class="v"><strong>Stuck agents, spotted.</strong>A call silent for too long turns amber. When an agent is waiting for your answer, it says so.</span></li>
-      <li><span class="k">cost.source</span><span class="v"><strong>Every cost names its source.</strong>The agent's own figure, or your own prices. No guessed price tables.</span></li>
-    </ul>
-  </section>
-
-
   <section class="wrap block" id="where">
     <div class="label"><b>~/where-it-sits</b></div>
     <h2>On the side, reading. Never in the way.</h2>
     <p class="intro">Agent Deck isn't in your terminal and isn't between your agent and the API. It reads the files your agent already writes, listens to hooks, and draws what it reads.</p>
     <figure class="dgfig">
-      <svg viewBox="0 0 960 540" role="img" aria-label="Your coding agent talks to its AI provider and writes session files to your disk. Agent Deck, inside VS Code, reads those files and optionally receives hook signals on 127.0.0.1. It never touches API traffic, never writes to the agent, and sends nothing off your machine.">
+      <svg viewBox="0 0 960 540" role="img" aria-label="Your coding agent talks to its AI provider and writes session files to your disk. Agent Deck, inside your editor, reads those files and optionally receives hook signals on 127.0.0.1. It never touches API traffic, never writes to the agent, and sends nothing off your machine.">
       <defs>
         <marker id="dgah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker>
         <marker id="dgaha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--accent)"/></marker>
@@ -412,9 +400,10 @@
       <line class="dg-arr" x1="180" y1="256" x2="180" y2="376" marker-end="url(#dgah)"/>
       <text class="dg-m" x="192" y="322">writes every step</text>
 
-      <!-- VS Code -->
-      <rect class="dg-vs" x="440" y="160" width="480" height="336" rx="10"/>
-      <text class="dg-m" x="460" y="182">VS Code</text>
+      <!-- your editor -->
+      <rect class="dg-vs" x="440" y="150" width="480" height="346" rx="10"/>
+      <text class="dg-m" x="460" y="171">Your editor</text>
+      <text class="dg-t2" x="460" y="189">VS Code · Cursor · Devin (Windsurf) · Kiro</text>
 
       <!-- Agent Deck -->
       <rect class="dg-deck" x="470" y="200" width="420" height="270" rx="10"/>
@@ -453,6 +442,24 @@
     </ul>
   </section>
 
+  <section class="wrap block" id="see">
+    <div class="label"><b>~/what-you-see</b></div>
+    <h2>One panel. Everything your agents are doing.</h2>
+    <div class="viewer">
+      <ul class="tabs" role="tablist" aria-label="Views">
+        <li><button role="tab" id="t-deck" aria-selected="true" data-img="media/deck.png" data-alt="The deck: one card per live session"><span class="n">01</span><span class="d"><strong>Deck</strong>Every live session at a glance, from every agent.</span></button></li>
+        <li><button role="tab" id="t-tree" aria-selected="false" data-img="media/tree.png" data-alt="One session's tree: the main agent and the subagents it spawned"><span class="n">02</span><span class="d"><strong>Tree</strong>Who spawned whom, and what each agent is doing now.</span></button></li>
+        <li><button role="tab" id="t-insp" aria-selected="false" data-img="media/inspector.png" data-alt="The inspector: a tool call expanded to its input and output"><span class="n">03</span><span class="d"><strong>Inspector</strong>Open any call: what went in, what came out, how long it took.</span></button></li>
+        <li><button role="tab" id="t-stats" aria-selected="false" data-img="media/stats_tokens.png" data-alt="The Stats view: cost and tokens per agent"><span class="n">04</span><span class="d"><strong>Stats</strong>Files and tools each session hammered, loops, and tokens over time.</span></button></li>
+      </ul>
+      <figure class="shot" role="tabpanel" aria-live="polite"><img id="shot" src="media/deck.png" width="1638" height="1998" alt="The deck: one card per live session"></figure>
+    </div>
+    <ul class="spec also">
+      <li><span class="k">stalled</span><span class="v"><strong>Stuck agents, spotted.</strong>A call silent for too long turns amber. When an agent is waiting for your answer, it says so.</span></li>
+      <li><span class="k">cost.source</span><span class="v"><strong>Every cost names its source.</strong>The agent's own figure, or your own prices. No guessed price tables.</span></li>
+    </ul>
+  </section>
+
   <section class="wrap block">
     <div class="label"><b>~/who-its-for</b></div>
     <h2>For developers who hand agents long tasks.</h2>
@@ -465,14 +472,12 @@
 
   <section class="wrap block">
     <div class="label"><b>~/why-agent-deck</b></div>
-    <h2>Most tools look back. Agent Deck watches live.</h2>
+    <h2>Other tools tell you what happened. Agent Deck shows you what's happening.</h2>
     <ul class="spec">
-      <li><span class="k">ccusage</span><span class="v">Sums up usage after the session ends.</span></li>
-      <li><span class="k">claude-code-log</span><span class="v">Turns finished transcripts into HTML.</span></li>
-      <li><span class="k">official extension</span><span class="v">Claude Code's VS Code extension runs Claude Code inside the editor. It doesn't show an agent tree.</span></li>
-      <li><span class="k">agent-deck</span><span class="v"><strong>The agent tree, live, while it runs.</strong>Read-only, no network.</span></li>
+      <li><span class="k">after the fact</span><span class="v">Usage reports and transcript viewers work once the session is over. They show you the bill, not what's running now.</span></li>
+      <li><span class="k">inside the agent</span><span class="v">Your agent's own window shows its conversation, not the whole tree of agents working under it.</span></li>
+      <li><span class="k">agent deck</span><span class="v">Every agent and every tool call, live, in one tree. Read-only, and no network.</span></li>
     </ul>
-    <p class="fine mt-14">As far as I know, no other tool shows the agent tree live, read-only and with no network.</p>
   </section>
 
   <section class="wrap block">
@@ -499,10 +504,10 @@
     <div class="label"><b>~/install</b><span>about 2 minutes</span></div>
     <h2>Up and running in three steps.</h2>
     <div class="term">
-      <div class="row"><span class="n">01</span><div><p><strong>Install</strong> from the VS Code Marketplace, or from your terminal:</p>
+      <div class="row"><span class="n">01</span><div><p><strong>VS Code:</strong> install from the <a href="https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck">VS Code Marketplace</a>, or run</p>
         <div class="cmd"><code id="cmd1">code --install-extension nvitlam.agent-deck</code><button class="copy" type="button" id="copy1">copy</button></div>
-        <p>Using Cursor, Windsurf, Kiro or VSCodium? Install Agent Deck from Open VSX: <a href="https://open-vsx.org/extension/nvitlam/agent-deck">https://open-vsx.org/extension/nvitlam/agent-deck</a></p></div></div>
-      <div class="row"><span class="n">02</span><p><strong>Click the Agent Deck icon</strong> in the VS Code sidebar. Your sessions appear.</p></div>
+        <p><strong>Cursor, Devin (Windsurf) or Kiro:</strong> install from <a href="https://open-vsx.org/extension/nvitlam/agent-deck">Open VSX</a></p></div></div>
+      <div class="row"><span class="n">02</span><p><strong>Click the Agent Deck icon</strong> in your editor's sidebar. Your sessions appear.</p></div>
       <div class="row"><span class="n">03</span><p><strong>Paste one hook block</strong><span class="tagopt">optional</span> into your Claude Code or Codex settings for second-by-second updates. You paste it yourself, because Agent Deck never edits your settings. <a href="https://github.com/NVitlam/agent-deck#install-the-hook-one-manual-paste">Guide →</a></p></div>
     </div>
   </section>
@@ -527,6 +532,7 @@
     <nav aria-label="Footer">
       <a href="https://github.com/NVitlam/agent-deck">github</a>
       <a href="https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck">marketplace</a>
+      <a href="https://open-vsx.org/extension/nvitlam/agent-deck">open vsx</a>
       <a href="https://github.com/sponsors/NVitlam">sponsor</a>
       <span>support@agent-deck.app</span>
     </nav>

@@ -82,6 +82,12 @@
   .btn .arr{transition:transform .2s}
   .btn:hover .arr{transform:translateX(3px)}
   .fine{font-family:var(--font-mono);font-size:.74rem;color:var(--text-3)}
+  /* the editors it works in: plain-text pills, no logos (ruling of 2026-10-12) */
+  .stores{margin-top:14px;max-width:none}
+  .works{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;margin-top:20px}
+  .works-k{font-family:var(--font-mono);font-size:.74rem;color:var(--text-3)}
+  .pills{display:flex;flex-wrap:wrap;gap:8px;list-style:none;padding:0}
+  .pills li{font-family:var(--font-mono);font-size:.74rem;color:var(--text-2);padding:4px 12px;border:1px solid var(--line-2);border-radius:14px;background:var(--bg);white-space:nowrap}
 
   /* section head: mono path label + title */
   section.block{padding-block:80px 0}
@@ -177,7 +183,7 @@
   .prices .row:last-child{border-bottom:0}
   .prices .head{background:var(--gold-soft);font-family:var(--font-mono);font-size:.7rem;color:var(--text-2);letter-spacing:.06em;text-transform:uppercase;padding-block:10px}
   .prices .head small{display:block;text-transform:none;letter-spacing:0;color:var(--text-3);font-size:.7rem}
-  .prices .term{font-weight:600;color:var(--text)}
+  .prices .term{font-weight:600;color:var(--text);display:flex;align-items:center;justify-content:center;text-align:center}
   .prices .price{font-family:var(--font-display);font-size:1.6rem;font-weight:700;color:var(--gold-2);font-variant-numeric:tabular-nums}
   .prices .btn{justify-content:center;width:100%;padding:10px 14px;font-size:.8rem}
   .prices .btn .m{display:none}
@@ -313,8 +319,10 @@
         <p class="sub">Agent Deck Insights is an optional paid add-on. Your own Claude Code or Codex reads what Agent Deck recorded and tells you what to change next time: fewer failed calls, less waiting, fewer wasted tokens.</p>
         <div class="cta">
           <a class="btn solid" href="#plans">See plans · from $10 <span class="arr">→</span></a>
-          <span class="fine">needs Agent Deck (free) + Claude Code or Codex</span>
+          <span class="fine">needs Agent Deck (free) + Claude Code or Codex to write the reports</span>
         </div>
+        <p class="fine stores">Install: <a href="https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck-insights">VS Code Marketplace</a> · <a href="https://open-vsx.org/extension/nvitlam/agent-deck-insights">Open VSX</a> (Cursor, Devin, Kiro)</p>
+        <div class="works"><span class="works-k">Works in</span><ul class="pills" aria-label="Editors"><li>VS Code</li><li>Cursor</li><li>Devin (Windsurf)</li><li>Kiro</li></ul></div>
       </div>
       <article class="finding" aria-label="Example finding">
         <div class="bar"><span><b>finding 1</b> · context churn · medium confidence</span><span>example · sample numbers</span></div>
@@ -400,7 +408,7 @@
   <section class="wrap block" id="plans">
     <div class="label"><b>~/plans</b><span>USD · one licence per person</span></div>
     <h2>One product. Pick how you pay.</h2>
-    <p class="intro">Every plan unlocks the same Insights. Your licence key arrives by email within minutes.</p>
+    <p class="intro">Every plan unlocks the same Insights. Your licence key arrives by email within minutes. Then install Insights from the <a href="https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck-insights">VS Code Marketplace</a> or <a href="https://open-vsx.org/extension/nvitlam/agent-deck-insights">Open VSX</a>, and run Set License Key.</p>
     <div class="prices" role="table" aria-label="Plans">
       <div class="row head" role="row"><span role="columnheader">Term</span><span role="columnheader">Price</span><span role="columnheader">Pay once<small>no renewal</small></span><span role="columnheader">Subscribe<small>renews automatically</small></span></div>
       <div class="row" role="row"><span class="term" role="cell">1 month</span><span class="price" role="cell">$10</span>
@@ -425,8 +433,9 @@
     <div class="faq">
       <details><summary>What exactly do I get for paying?</summary><p>Reports. Each one is a short list of findings about your last 7 days of sessions: one action, the cause, and the numbers behind it. You can export any report, or open a follow-up session in your agent to ask about it.</p></details>
       <details><summary>Does Agent Deck need Insights?</summary><p>No. Agent Deck is free and complete on its own. Insights only adds the reports.</p></details>
-      <details><summary>Do I need Agent Deck?</summary><p>Yes. Insights builds on the numbers Agent Deck records. Agent Deck is free.</p></details>
+      <details><summary>Do I need Agent Deck?</summary><p>Yes. Insights builds on the numbers Agent Deck records. Agent Deck is free, and it installs automatically with Insights.</p></details>
       <details><summary>Which agents does it work with?</summary><p>Claude Code or Codex, installed on your machine and signed in to your account.</p></details>
+      <details><summary>Which editors does it work with?</summary><p>VS Code 1.126 or later, Cursor, Devin (Windsurf) and Kiro. Agent Deck installs along with it. In Cursor, Devin (Windsurf) and Kiro, install from Open VSX: <a href="https://open-vsx.org/extension/nvitlam/agent-deck-insights">https://open-vsx.org/extension/nvitlam/agent-deck-insights</a></p></details>
       <details><summary>What does a report cost me?</summary><p>Your plan, plus a little usage on your own agent account each time you run a report.</p></details>
       <details><summary>Is my code or chat history sent anywhere?</summary><p>No. Only numbers, file names and agent names go to your own agent, and you see them before you click Send.</p></details>
       <details><summary>How do I cancel a subscription?</summary><p>Through Polar, where you paid.</p></details>
@@ -446,6 +455,7 @@
     <nav aria-label="Footer">
       <a href="index.html">agent-deck</a>
       <a href="https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck-insights">marketplace</a>
+      <a href="https://open-vsx.org/extension/nvitlam/agent-deck-insights">open vsx</a>
       <a href="https://github.com/NVitlam/agent-deck">github</a>
       <a href="https://github.com/sponsors/NVitlam">sponsor</a>
       <a href="mailto:support@agent-deck.app">support@agent-deck.app</a>

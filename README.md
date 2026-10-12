@@ -2,7 +2,7 @@
 
 **See what your AI coding agents are doing. Right now.**
 
-Agent Deck is a free VS Code extension that draws a live tree of every agent and every tool call, as they work.
+Agent Deck is a free extension for VS Code, Cursor, Devin (Windsurf) and Kiro that draws a live tree of every agent and every tool call, as they work.
 
 ![Agent Deck drawing a live tree as one session spawns 4 lead agents and 8 workers](media/agent-deck-hero.gif)
 
@@ -23,7 +23,7 @@ Give Claude Code or Codex a big task and it splits the work across several agent
 Developers who hand Claude Code, Codex or OpenCode long tasks with subagents. Seeing what's happening comes first. Tokens and cost are shown too.
 
 ## Install
-1. Install Agent Deck from the Marketplace.
+1. Install Agent Deck from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=nvitlam.agent-deck), or from [Open VSX](https://open-vsx.org/extension/nvitlam/agent-deck) in Cursor, Devin (Windsurf) and Kiro.
 2. Click the Agent Deck icon in the sidebar.
 3. Optional: paste the hook block below for second-by-second updates.
 
@@ -247,7 +247,7 @@ Install from the VS Code Marketplace - open the **Extensions** view and search f
 code --install-extension nvitlam.agent-deck
 ```
 
-Using Cursor, Windsurf, Kiro or VSCodium? Install Agent Deck from Open VSX: https://open-vsx.org/extension/nvitlam/agent-deck
+Works in VS Code 1.126 or later, Cursor, Devin (Windsurf) and Kiro. In Cursor, Devin (Windsurf) and Kiro, install from Open VSX: https://open-vsx.org/extension/nvitlam/agent-deck
 
 **Where to find it: the Agent Deck icon in the activity bar.** It opens a sidebar with a strip
 of three tabs — **Menu · View · Tweaks** — one open at a time. The same three are on the view's

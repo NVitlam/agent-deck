@@ -1260,6 +1260,32 @@ describe('ruling of 2026-10-13 — your editor, not VS Code alone', () => {
     for (const rule of later) expect(rule.body, `${rule.media ?? ''} ${rule.selector}`).not.toMatch(/display|justify-content|text-align/);
   });
 
+  it('insights.html: the plan prices and buttons are centred, as fc2f9f7 set them', () => {
+    // e6afd24 (0.9.3.D) dropped the same centring from .prices .price and
+    // text-align from .prices .btn; fix/prices-centre puts them back.
+    const blocks = cssBlocks(styleOf(INSIGHTS));
+    const declsOf = (selector: string): Record<string, string> => {
+      const rules = blocks.filter((b) => b.media === null && b.selector === selector);
+      expect(rules, selector).toHaveLength(1);
+      return Object.fromEntries(
+        (rules[0]?.body ?? '')
+          .split(';')
+          .map((d) => d.split(':').map((s) => s.trim()))
+          .filter((d) => d.length === 2),
+      );
+    };
+    const centred = { 'justify-content': 'center', 'text-align': 'center' };
+    expect(declsOf('.prices .price')).toMatchObject({ display: 'flex', 'align-items': 'center', ...centred });
+    expect(declsOf('.prices .btn')).toMatchObject(centred);
+    // Nothing later in the sheet takes them back.
+    for (const target of ['.prices .price', '.prices .btn']) {
+      const later = blocks.filter(
+        (b) => b.selector.split(',').some((s) => s.trim().endsWith(target)) && !(b.media === null && b.selector === target),
+      );
+      for (const rule of later) expect(rule.body, `${rule.media ?? ''} ${rule.selector}`).not.toMatch(/justify-content|text-align/);
+    }
+  });
+
   it('insights.html: the plans intro says where to install, and the FAQ says Agent Deck comes along', () => {
     const intro = /<p class="intro">([\s\S]*?)<\/p>/.exec(sectionOf(INSIGHTS, '~/plans'))?.[1] ?? '';
     expect(visible(intro)).toBe(
